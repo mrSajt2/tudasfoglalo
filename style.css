@@ -483,3 +483,33 @@ body.screen-game .turn-banner{padding:8px 10px;min-width:0;font-size:11px;max-wi
  body.screen-game .option{min-height:35px;padding:5px 7px}
  body.screen-game .timer-ring{width:65px;height:65px}
 }
+
+
+/* v8: shared-question territory draft and battle-round presentation */
+.round-tracker{display:flex;flex-direction:column;gap:5px;margin:0;padding:12px 13px;border:1px solid #2b4773;border-radius:15px;background:linear-gradient(135deg,#101f3b,#0b162b);box-shadow:inset 0 1px #ffffff05}
+.round-tracker-label{font-size:10px;font-weight:900;letter-spacing:1.2px;color:#8fb6ff}
+.round-tracker strong{font-size:19px;line-height:1.15;letter-spacing:-.35px;color:#f5f8ff}
+.round-tracker small{font-size:11px;line-height:1.35;color:#9cb0d4}
+.battle-winner-banner{display:flex;align-items:center;gap:12px;margin:0 0 12px;padding:12px 15px;border:1px solid #368f70;border-radius:15px;background:linear-gradient(110deg,#123d37,#0d272f);box-shadow:0 0 24px #30c89518}
+.battle-winner-banner.defender-winner{border-color:#4774b5;background:linear-gradient(110deg,#142f55,#101c38);box-shadow:0 0 24px #398bff18}
+.battle-winner-icon{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:13px;background:#1b765c;color:#fff;font-size:23px}
+.defender-winner .battle-winner-icon{background:#25508a}
+.battle-winner-banner small{display:block;margin-bottom:3px;font-size:9px;font-weight:900;letter-spacing:1.4px;color:#9fd8c2}
+.defender-winner small{color:#9fc1ff}
+.battle-winner-banner strong{display:block;font-size:clamp(17px,1.5vw,23px);line-height:1.15;letter-spacing:-.4px;color:#f7fffc}
+.defender-winner strong{color:#eef5ff}
+@media(min-width:761px){.round-tracker{flex:0 0 auto}.battle-winner-banner{min-height:62px}}
+@media(max-width:760px){
+ body.screen-game .round-tracker{min-width:0;flex-direction:row;align-items:center;gap:6px;margin:0;padding:4px 7px;border-radius:9px;white-space:nowrap;overflow:hidden}
+ body.screen-game .round-tracker-label{font-size:8px;letter-spacing:.5px;flex-shrink:0}
+ body.screen-game .round-tracker strong{font-size:10px;flex-shrink:0}
+ body.screen-game .round-tracker small{font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ body.screen-game .game-board{grid-template-rows:minmax(54px,auto) minmax(145px,28dvh) minmax(0,1fr)}
+ body.screen-game .players-rail{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:35px 18px;gap:1px}
+ body.screen-game .scoreboard{height:35px}
+ body.screen-game .battle-winner-banner{gap:6px;margin-bottom:4px;padding:5px 7px;border-radius:9px}
+ body.screen-game .battle-winner-icon{width:25px;height:25px;flex-basis:25px;border-radius:7px;font-size:14px}
+ body.screen-game .battle-winner-banner small{font-size:7px;letter-spacing:.7px;margin-bottom:1px}
+ body.screen-game .battle-winner-banner strong{font-size:clamp(10px,2.7vw,13px);line-height:1.05;letter-spacing:0}
+}
+@media(max-width:390px){body.screen-game .game-board{grid-template-rows:minmax(55px,auto) minmax(132px,26dvh) minmax(0,1fr)}body.screen-game .players-rail{grid-template-rows:36px 18px}body.screen-game .scoreboard{height:36px}}

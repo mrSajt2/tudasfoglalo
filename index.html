@@ -34,7 +34,7 @@
     <div><label for="questionTimeSelect">Válaszidő kérdésenként</label><select id="questionTimeSelect"><option value="10">10 másodperc</option><option value="15">15 másodperc</option><option value="20" selected>20 másodperc</option><option value="30">30 másodperc</option><option value="45">45 másodperc</option><option value="60">60 másodperc</option></select></div>
     <div><label for="battleRoundsSelect">Csatakörök száma</label><select id="battleRoundsSelect"><option value="3">3 kör – gyors</option><option value="5" selected>5 kör – normál</option><option value="8">8 kör – hosszú</option><option value="10">10 kör – stratégiai</option></select></div>
   </div>
-  <p class="small muted create-help">Először minden vármegye gazdára talál. Utána indul a csata: a támadó és a védő külön kérdést kap. A megadott csatakörök száma játékosonként értendő.</p>
+  <p class="small muted create-help">A területfoglalás közös kérdéseire mindenki válaszol: az első helyes válaszoló két, a második egy vármegyét választhat a gyorsaság alapján. Ezután indulnak az egymás elleni csaták, ahol a támadó és a védő ugyanazt a kérdést kapja.</p>
   <label class="file-label" for="csvFile">Kérdések importálása (.csv)</label><input id="csvFile" type="file" accept=".csv,text/csv">
   <div id="fileInfo" class="file-info">Nincs fájl kiválasztva. Beépített mintakérdésekkel is kipróbálhatod.</div>
   <button id="createRoom" class="primary full">Szoba létrehozása</button><p id="createError" class="error"></p>
@@ -52,6 +52,7 @@
     <aside class="players-rail">
       <div class="rail-heading"><div><strong>Játékosok</strong><span id="gamePlayerCount">0 játékos</span></div><span class="rail-crown">♛</span></div>
       <div id="scoreboard" class="scoreboard"></div>
+      <div id="roundTracker" class="round-tracker" aria-live="polite"><span class="round-tracker-label">TERÜLETFOGLALÁS</span><strong>1. közös kérdés</strong><small>1. hely: 2 terület · 2. hely: 1 terület</small></div>
       <div class="conquest-tip"><div class="tip-icon">⚑</div><strong>Hódíts tudással!</strong><p>Válassz egy szabad vármegyét, válaszolj helyesen, és szerezd meg a területet.</p></div>
       <div class="map-key"><span><i class="key-dot free-dot"></i>Szabad terület</span><span><i class="key-dot owned-dot"></i>Elfoglalt terület</span></div>
     </aside>
@@ -71,5 +72,5 @@
   <div class="modal-backdrop" data-close-modal></div><div class="modal-card modal-card-wide"><button class="modal-close" data-close-modal aria-label="Bezárás">×</button><div class="eyebrow">KÉRDÉSBANK</div><h2 id="questionsModalTitle">Kérdések</h2><p id="questionsModalDescription" class="muted small">A szobába importált kérdések.</p><ol id="questionBankList" class="question-bank-list"></ol><button class="secondary full" type="button" data-close-modal>Bezárás</button></div>
 </div>
 <footer>Tanulásból terület. Területből győzelem.</footer>
-<script type="module" src="app.js?v=6"></script>
+<script type="module" src="app.js?v=8"></script>
 </body></html>

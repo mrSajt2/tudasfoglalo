@@ -35,7 +35,8 @@ const sample=[
  {question:'Mit jelent a dyád?',options:['Két személyből álló csoport','Három személyből álló csoport','Nagy társadalmi réteg','Intézmény'],correct:0},
  {question:'Mi a kohorsz (cohort) a társadalomtudományokban?',options:['Véletlen minta','Azonos időszakban közös eseményt átélő csoport','Kutatási hipotézis','Kérdőívtípus'],correct:1}
 ];
-let app,auth,db,uid=null,roomId=null,roomData=null,unsubscribe=null,selectedTerritory=null,answerBusy=false,localQuestions=sample,hostUid=null,databaseConnected=false;
+let app,auth,db,uid=null,roomId=null,roomData=null,unsubscribe=null,selectedTerritory=null,answerBusy=false,localQuestions=sample,hostUid=null,databaseConnected=false,serverTimeOffset=0;
+const serverNow=()=>Date.now()+serverTimeOffset;
 const readyConfig=()=>firebaseConfig.apiKey&&!firebaseConfig.apiKey.startsWith('IDE_')&&firebaseConfig.projectId&&!firebaseConfig.projectId.startsWith('IDE_');
 function show(id){screens.forEach(s=>$(s).classList.toggle('hidden',s!==id));document.body.className=document.body.className.split(' ').filter(c=>!c.startsWith('screen-')).join(' ');document.body.classList.add('screen-'+id);$('headerRoomBox')?.classList.toggle('hidden',id!=='game');$('gameActions')?.classList.toggle('hidden',id!=='game');if(id==='game')window.scrollTo({top:0,behavior:'smooth'});else window.scrollTo({top:0,behavior:'smooth'});}
 function status(t){$('connection').textContent=t;}
@@ -43,7 +44,7 @@ function withTimeout(promise,ms,message){let timer;return Promise.race([promise,
 function err(id,t){$(id).textContent=t||'';}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function parseCSV(text){const rows=[];let row=[],field='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'&&quoted&&text[i+1]==='"'){field+='"';i++;}else if(c==='"'){quoted=!quoted;}else if(c===','&&!quoted){row.push(field.trim());field='';}else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(field.trim());if(row.some(x=>x!==''))rows.push(row);row=[];field='';}else field+=c;}if(field.length||row.length){row.push(field.trim());rows.push(row);}if(rows.length&&/question|kérdés/i.test(rows[0][0]||''))rows.shift();return rows.map(r=>{const raw=(r[5]||'A').toUpperCase();let correct='ABCD'.indexOf(raw);if(correct<0)correct=Number(raw)-1;return {question:r[0],options:r.slice(1,5),correct};}).filter(q=>q.question&&q.options.length===4&&q.options.every(Boolean)&&q.correct>=0&&q.correct<4);}
-async function init(){if(!readyConfig()){status('Beállítás szükséges');$('createRoom').disabled=true;$('joinRoom').disabled=true;const n=document.createElement('div');n.className='note';n.innerHTML='Az online funkciók bekapcsolásához a <code>firebase-config.js</code> fájlban add meg a Firebase-projekt adatait. A lépéseket a mellékelt README tartalmazza.';$('home').append(n);return;}try{app=initializeApp(firebaseConfig);auth=getAuth(app);db=getDatabase(app);onValue(ref(db,'.info/connected'),snap=>{databaseConnected=snap.val()===true;if(databaseConnected){status(uid?'Online · csatlakozva':'Adatbázis elérhető');}else{status('Adatbázis offline');}});await signInAnonymously(auth);onAuthStateChanged(auth,u=>{if(u){uid=u.uid;status(databaseConnected?'Online · csatlakozva':'Bejelentkezve · adatbázis ellenőrzése…');$('createRoom').disabled=false;$('joinRoom').disabled=false;}});}catch(e){status('Kapcsolódási hiba');console.error(e);$('createError').textContent='Firebase-kapcsolódási hiba: '+(e?.code||e?.message||'ismeretlen hiba');$('joinError').textContent=$('createError').textContent;}}
+async function init(){if(!readyConfig()){status('Beállítás szükséges');$('createRoom').disabled=true;$('joinRoom').disabled=true;const n=document.createElement('div');n.className='note';n.innerHTML='Az online funkciók bekapcsolásához a <code>firebase-config.js</code> fájlban add meg a Firebase-projekt adatait. A lépéseket a mellékelt README tartalmazza.';$('home').append(n);return;}try{app=initializeApp(firebaseConfig);auth=getAuth(app);db=getDatabase(app);onValue(ref(db,'.info/connected'),snap=>{databaseConnected=snap.val()===true;if(databaseConnected){status(uid?'Online · csatlakozva':'Adatbázis elérhető');}else{status('Adatbázis offline');}});onValue(ref(db,'.info/serverTimeOffset'),snap=>{serverTimeOffset=Number(snap.val())||0;});await signInAnonymously(auth);onAuthStateChanged(auth,u=>{if(u){uid=u.uid;status(databaseConnected?'Online · csatlakozva':'Bejelentkezve · adatbázis ellenőrzése…');$('createRoom').disabled=false;$('joinRoom').disabled=false;}});}catch(e){status('Kapcsolódási hiba');console.error(e);$('createError').textContent='Firebase-kapcsolódási hiba: '+(e?.code||e?.message||'ismeretlen hiba');$('joinError').textContent=$('createError').textContent;}}
 function makeId(){return Math.random().toString(36).slice(2,8).toUpperCase();}
 async function createRoom(){
   err('createError','');
@@ -88,9 +89,33 @@ async function startGame(){
  if(order.length<2){err('lobbyError','Legalább 2 játékos szükséges.');return;}
  clearQuestionTimer();
  const territories=(roomData.territories||lands.map(name=>({name,owner:null}))).map(t=>({...t,owner:null}));
- await update(ref(db,'rooms/'+roomId),{phase:'playing',stage:'claim',turnOrder:order,turn:order[0],round:0,questionIndex:0,battleTurnCount:0,pendingQuestion:null,lastResult:{text:'Területfoglalás: foglaljátok el mind a 20 vármegyét és Budapestet!',at:Date.now()},territories});
+ const state={...roomData,turnOrder:order,questionIndex:0,stage:'claimQuiz',claimRound:1,claimRanking:[],claimAwardOrder:[],claimPicksAllowed:{},claimPicksMade:{},battleTurnCount:0,territories};
+ state.pendingQuestion=makeClaimQuizPending(state);
+ state.turn=null;
+ await update(ref(db,'rooms/'+roomId),{phase:'playing',stage:'claimQuiz',turnOrder:order,turn:null,round:0,questionIndex:0,claimRound:1,claimRanking:[],claimAwardOrder:[],claimPicksAllowed:{},claimPicksMade:{},battleTurnCount:0,pendingQuestion:state.pendingQuestion,lastResult:{text:'Területfoglalás: mindenki válaszol ugyanarra a közös kérdésre. Az első helyes válaszoló 2, a második 1 vármegyét választhat.',at:Date.now()},territories});
 }
 function currentQuestion(){const qs=roomData?.questions||sample;return qs[(roomData?.questionIndex||0)%qs.length];}
+function makeClaimQuizPending(state){
+ const qs=state.questions||sample, qi=(Number(state.questionIndex)||0)%Math.max(1,qs.length);
+ return {id:`${Date.now()}-${makeId()}`,mode:'claimQuiz',questionIndex:qi,question:qs[qi],participantUids:[...(state.turnOrder||Object.keys(state.players||{}))],startedAt:serverNow(),answers:{},reveal:null};
+}
+function participantsForQuestion(p,order=[]){
+ if(p?.mode==='claimQuiz')return p.participantUids||order;
+ return p?.mode==='battle'?[p.attackerUid,p.defenderUid].filter(Boolean):[p?.attackerUid].filter(Boolean);
+}
+function rankClaimAnswers(p, answers=p?.reveal?.answers||p?.answers||{}){
+ const ids=p?.participantUids||Object.keys(answers||{});
+ return ids.map(id=>({uid:id,...(answers[id]||{})})).filter(a=>a.correct).sort((a,b)=>{
+  const ae=Number.isFinite(Number(a.elapsedMs))?Number(a.elapsedMs):Number(a.answeredAt||Infinity);
+  const be=Number.isFinite(Number(b.elapsedMs))?Number(b.elapsedMs):Number(b.answeredAt||Infinity);
+  return ae-be || Number(a.answeredAt||0)-Number(b.answeredAt||0) || String(a.uid).localeCompare(String(b.uid));
+ });
+}
+function makeQuestionReveal(p,answers,now=serverNow()){
+ const reveal={revealedAt:now,answers,attackerWon:p.mode==='battle'&&!!answers[p.attackerUid]?.correct&&!answers[p.defenderUid]?.correct};
+ if(p.mode==='claimQuiz')reveal.claimRanking=rankClaimAnswers(p,answers).map(a=>({uid:a.uid,correct:true,elapsedMs:Number(a.elapsedMs)||0,answeredAt:Number(a.answeredAt)||now}));
+ return reveal;
+}
 function nextPlayerWithLand(order,startIndex,territories){
  for(let step=0;step<order.length;step++){const id=order[(startIndex+step+order.length)%order.length];if((territories||[]).some(t=>t.owner===id))return id;}
  return order[(startIndex+order.length)%order.length]||order[0];
@@ -103,172 +128,261 @@ function renderGame(){
  $('gameSubject').textContent=roomData.title||'TANULÓS JÁTÉK';$('headerRoomCode').textContent=roomId||'—';
  $('headerRoomMeta').textContent=`Játékosok: ${Object.keys(players).length}/6 · Kérdések: ${questions.length}`;
  const freeCount=territories.filter(t=>!t.owner).length;
- if(stage==='claim')$('turnBanner').textContent=turn===uid?'A te köröd · Válassz egy szabad vármegyét':`${active?.name||'Egy játékos'} foglal területet`;
- else $('turnBanner').textContent=turn===uid?'A te köröd · Válassz ellenfél-vármegyét':`${active?.name||'Egy játékos'} támad`;
+ if(stage==='claimQuiz')$('turnBanner').textContent=`Közös kérdés · mindenki válaszol`;
+ else if(stage==='claimPick')$('turnBanner').textContent=turn===uid?'Te következel · válassz szabad vármegyét':`${active?.name||'Egy játékos'} területet választ`;
+ else if(stage==='battle')$('turnBanner').textContent=turn===uid?'A te köröd · Válassz ellenfél-vármegyét':`${active?.name||'Egy játékos'} támad`;
+ else $('turnBanner').textContent=turn===uid?'A te köröd · Válassz egy szabad vármegyét':`${active?.name||'Egy játékos'} foglal területet`;
  $('gamePlayerCount').textContent=`${Object.keys(players).length} játékos`;
- const ranked=order.map(id=>{const p=players[id]||{};return {id,p,n:territories.filter(t=>t.owner===id).length};}).sort((a,b)=>b.n-a.n);
- $('scoreboard').innerHTML=ranked.map(({id,p,n},i)=>`<div class="rank-card ${id===turn?'active':''}" style="--player-color:${esc(p.color||colors[0])}"><div class="rank-number">${i+1}</div><div class="rank-info"><strong>${esc(p.name||'Játékos')}</strong><span>${n} ${n===1?'terület':'terület'}</span></div>${i===0?'<span class="leader-crown" aria-label="Élen áll">♛</span>':''}</div>`).join('');
+ const ranked=order.map(id=>{const pl=players[id]||{};return {id,p:pl,n:territories.filter(t=>t.owner===id).length};}).sort((a,b)=>b.n-a.n);
+ $('scoreboard').innerHTML=ranked.map(({id,p,n},i)=>`<div class="rank-card ${stage!=='claimQuiz'&&id===turn?'active':''}" style="--player-color:${esc(p.color||colors[0])}"><div class="rank-number">${i+1}</div><div class="rank-info"><strong>${esc(p.name||'Játékos')}</strong><span>${n} ${n===1?'terület':'terület'}</span></div>${i===0?'<span class="leader-crown" aria-label="Élen áll">♛</span>':''}</div>`).join('');
+ const tracker=$('roundTracker');
+ if(tracker){
+  if(stage==='battle'){
+   const rounds=Math.max(1,Number(roomData.battleRounds)||5),thisRound=Math.min(rounds,Math.floor((Number(roomData.battleTurnCount)||0)/Math.max(1,order.length))+1);
+   tracker.innerHTML=`<span class="round-tracker-label">CSATAKÖR</span><strong>${thisRound} / ${rounds}</strong><small>${Number(roomData.battleTurnCount)||0} csata lezajlott</small>`;
+  }else if(stage==='claimPick'){
+   const allowed=Number(roomData.claimPicksAllowed?.[turn])||0,made=Number(roomData.claimPicksMade?.[turn])||0;
+   tracker.innerHTML=`<span class="round-tracker-label">TERÜLETFOGLALÁS</span><strong>${esc(active?.name||'Játékos')} választ</strong><small>${Math.max(0,allowed-made)} választás van hátra · ${freeCount} szabad</small>`;
+  }else{
+   tracker.innerHTML=`<span class="round-tracker-label">TERÜLETFOGLALÁS</span><strong>${Number(roomData.claimRound)||1}. közös kérdés</strong><small>1. hely: 2 terület · 2. hely: 1 terület</small>`;
+  }
+ }
  const pending=roomData.pendingQuestion;const selectedIndex=selectedTerritory??pending?.territoryIndex;
  const areas=countyDefs.map((county,i)=>{
    const t=territories[i]; if(!t)return '';
    const owner=t.owner?players[t.owner]:null;
-   const stage=roomData.stage||'claim'; const locked=!isCurrent||!!pending||(stage==='claim'?!!t.owner:(!t.owner||t.owner===uid));
+   const stageNow=roomData.stage||'claim';
+   let locked;
+   if(pending)locked=true;
+   else if(stageNow==='claimQuiz')locked=true;
+   else if(stageNow==='claimPick')locked=!isCurrent||!!t.owner;
+   else if(stageNow==='battle')locked=!isCurrent||!t.owner||t.owner===uid;
+   else locked=!isCurrent||!!t.owner;
    const selected=selectedIndex===i;
-   const attackable=(roomData.stage||'claim')==='battle'&&!!owner&&t.owner!==uid; const classes=['county',owner?'owned':'free',locked?'locked':'',selected?'selected':'',attackable?'attackable':'',county.name==='Budapest'?'capital':''].filter(Boolean).join(' ');
+   const attackable=stageNow==='battle'&&!!owner&&t.owner!==uid;
+   const classes=['county',owner?'owned':'free',locked?'locked':'',selected?'selected':'',attackable?'attackable':'',county.name==='Budapest'?'capital':''].filter(Boolean).join(' ');
    const lineHeight=county.lines.length>1?22:0;
    const label=county.lines.map((line,n)=>{const y=county.y+(n-(county.lines.length-1)/2)*lineHeight;return `<tspan x="${county.x}" y="${y}">${esc(line)}</tspan>`;}).join('');
    const ownerText=owner?` — ${esc(owner.name)}`:' — szabad terület';
    return `<g class="${classes}" style="${owner?`--owner-color:${esc(owner.color||colors[0])}`:''}" data-territory="${i}" role="button" tabindex="${locked?-1:0}" aria-label="${esc(county.name+ownerText)}"><title>${esc(county.name+ownerText)}</title><path class="county-shape" d="${county.d}"/><text class="county-label ${county.fontSize<17?'long-label':''} ${county.name==='Budapest'?'city-label':''}" x="${county.x}" y="${county.y}" style="font-size:${county.fontSize}px">${label}</text></g>`;
  }).join('');
- $('map').innerHTML=`<div class="map-scroll"><svg class="hungary-map" style="--map-zoom:${mapZoom}" viewBox="0 0 960 630" preserveAspectRatio="none" role="img" aria-label="Magyarország megyei térképe, 19 vármegyével és Budapesttel"><defs><linearGradient id="countyGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffc52c"/><stop offset=".56" stop-color="#ffad12"/><stop offset="1" stop-color="#ff9810"/></linearGradient><filter id="countyGlow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="5" result="blur"/><feComposite in="SourceGraphic" in2="blur" operator="over"/></filter></defs><path class="map-glow" d="M 940,117 L 933,106 L 922,106 L 915,111 L 904,110 L 896,90 L 889,82 L 871,81 L 861,61 L 853,57 L 853,50 L 848,47 L 837,56 L 814,57 L 800,61 L 798,66 L 782,64 L 773,54 L 765,32 L 755,31 L 752,24 L 743,18 L 741,22 L 729,23 L 725,30 L 714,28 L 703,36 L 688,31 L 678,32 L 672,25 L 664,26 L 661,22 L 643,24 L 618,32 L 619,40 L 607,54 L 606,65 L 595,83 L 570,89 L 570,94 L 560,104 L 552,105 L 544,112 L 537,112 L 532,106 L 522,107 L 521,101 L 515,97 L 507,99 L 504,93 L 499,91 L 485,103 L 480,121 L 457,123 L 448,129 L 416,127 L 413,130 L 393,131 L 390,142 L 382,145 L 383,165 L 391,170 L 391,177 L 379,180 L 366,191 L 340,189 L 322,195 L 300,194 L 288,190 L 245,193 L 236,190 L 223,176 L 216,176 L 211,167 L 200,161 L 199,155 L 186,141 L 178,141 L 168,135 L 157,143 L 155,161 L 145,166 L 149,170 L 150,197 L 122,201 L 120,196 L 116,202 L 104,202 L 100,191 L 83,186 L 79,187 L 78,194 L 63,202 L 82,211 L 92,210 L 99,233 L 93,237 L 92,248 L 80,256 L 63,255 L 67,284 L 62,287 L 58,296 L 63,299 L 63,307 L 69,308 L 69,315 L 64,318 L 68,322 L 68,328 L 63,330 L 65,338 L 38,336 L 36,344 L 25,350 L 15,363 L 38,361 L 45,368 L 45,376 L 41,378 L 42,386 L 49,396 L 55,398 L 55,405 L 50,409 L 68,427 L 69,438 L 85,445 L 93,458 L 110,465 L 116,472 L 118,484 L 129,495 L 158,512 L 158,519 L 162,520 L 169,531 L 170,541 L 181,548 L 181,554 L 212,556 L 220,563 L 226,576 L 248,582 L 252,588 L 273,586 L 282,591 L 288,588 L 303,588 L 311,594 L 327,592 L 333,597 L 340,588 L 345,588 L 355,581 L 366,562 L 373,562 L 385,569 L 387,563 L 393,563 L 398,558 L 412,559 L 416,552 L 423,552 L 422,543 L 427,537 L 433,537 L 439,546 L 453,545 L 458,538 L 472,535 L 478,526 L 486,521 L 486,515 L 492,509 L 513,507 L 522,515 L 530,517 L 546,507 L 556,507 L 560,514 L 571,511 L 592,518 L 596,512 L 619,514 L 624,505 L 630,505 L 644,516 L 654,510 L 656,501 L 660,500 L 662,486 L 678,484 L 683,488 L 704,491 L 710,480 L 718,480 L 723,459 L 734,457 L 737,452 L 730,444 L 731,431 L 736,424 L 735,417 L 739,412 L 750,413 L 755,407 L 754,400 L 762,399 L 765,394 L 762,389 L 764,370 L 774,364 L 775,351 L 784,345 L 783,328 L 793,314 L 800,312 L 802,302 L 808,297 L 807,286 L 818,260 L 830,254 L 828,229 L 843,213 L 849,212 L 860,184 L 869,179 L 881,180 L 885,168 L 907,173 L 916,170 L 921,160 L 927,160 L 927,149 L 937,145 L 943,136 L 938,132 Z"/>${areas}<path class="map-outer-line" d="M 940,117 L 933,106 L 922,106 L 915,111 L 904,110 L 896,90 L 889,82 L 871,81 L 861,61 L 853,57 L 853,50 L 848,47 L 837,56 L 814,57 L 800,61 L 798,66 L 782,64 L 773,54 L 765,32 L 755,31 L 752,24 L 743,18 L 741,22 L 729,23 L 725,30 L 714,28 L 703,36 L 688,31 L 678,32 L 672,25 L 664,26 L 661,22 L 643,24 L 618,32 L 619,40 L 607,54 L 606,65 L 595,83 L 570,89 L 570,94 L 560,104 L 552,105 L 544,112 L 537,112 L 532,106 L 522,107 L 521,101 L 515,97 L 507,99 L 504,93 L 499,91 L 485,103 L 480,121 L 457,123 L 448,129 L 416,127 L 413,130 L 393,131 L 390,142 L 382,145 L 383,165 L 391,170 L 391,177 L 379,180 L 366,191 L 340,189 L 322,195 L 300,194 L 288,190 L 245,193 L 236,190 L 223,176 L 216,176 L 211,167 L 200,161 L 199,155 L 186,141 L 178,141 L 168,135 L 157,143 L 155,161 L 145,166 L 149,170 L 150,197 L 122,201 L 120,196 L 116,202 L 104,202 L 100,191 L 83,186 L 79,187 L 78,194 L 63,202 L 82,211 L 92,210 L 99,233 L 93,237 L 92,248 L 80,256 L 63,255 L 67,284 L 62,287 L 58,296 L 63,299 L 63,307 L 69,308 L 69,315 L 64,318 L 68,322 L 68,328 L 63,330 L 65,338 L 38,336 L 36,344 L 25,350 L 15,363 L 38,361 L 45,368 L 45,376 L 41,378 L 42,386 L 49,396 L 55,398 L 55,405 L 50,409 L 68,427 L 69,438 L 85,445 L 93,458 L 110,465 L 116,472 L 118,484 L 129,495 L 158,512 L 158,519 L 162,520 L 169,531 L 170,541 L 181,548 L 181,554 L 212,556 L 220,563 L 226,576 L 248,582 L 252,588 L 273,586 L 282,591 L 288,588 L 303,588 L 311,594 L 327,592 L 333,597 L 340,588 L 345,588 L 355,581 L 366,562 L 373,562 L 385,569 L 387,563 L 393,563 L 398,558 L 412,559 L 416,552 L 423,552 L 422,543 L 427,537 L 433,537 L 439,546 L 453,545 L 458,538 L 472,535 L 478,526 L 486,521 L 486,515 L 492,509 L 513,507 L 522,515 L 530,517 L 546,507 L 556,507 L 560,514 L 571,511 L 592,518 L 596,512 L 619,514 L 624,505 L 630,505 L 644,516 L 654,510 L 656,501 L 660,500 L 662,486 L 678,484 L 683,488 L 704,491 L 710,480 L 718,480 L 723,459 L 734,457 L 737,452 L 730,444 L 731,431 L 736,424 L 735,417 L 739,412 L 750,413 L 755,407 L 754,400 L 762,399 L 765,394 L 762,389 L 764,370 L 774,364 L 775,351 L 784,345 L 783,328 L 793,314 L 800,312 L 802,302 L 808,297 L 807,286 L 818,260 L 830,254 L 828,229 L 843,213 L 849,212 L 860,184 L 869,179 L 881,180 L 885,168 L 907,173 L 916,170 L 921,160 L 927,160 L 927,149 L 937,145 L 943,136 L 938,132 Z"/><text class="map-caption" x="480" y="618">MAGYARORSZÁG · 19 VÁRMEGYE + BUDAPEST</text></svg></div>`;
+ $('map').innerHTML=`<div class="map-scroll"><svg class="hungary-map" style="--map-zoom:${mapZoom}" viewBox="0 0 960 630" preserveAspectRatio="none" role="img" aria-label="Magyarország megyei térképe, 19 vármegyével és Budapesttel"><defs><linearGradient id="countyGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffc52c"/><stop offset=".56" stop-color="#ffad12"/><stop offset="1" stop-color="#ff9810"/></linearGradient><filter id="countyGlow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="5" result="blur"/><feComposite in="SourceGraphic" in2="blur" operator="over"/></filter></defs><path class="map-glow" d="M 940,117 L 933,106 L 922,106 L 915,111 L 904,110 L 896,90 L 889,82 L 871,81 L 861,61 L 853,57 L 853,50 L 848,47 L 837,56 L 814,57 L 800,61 L 798,66 L 782,64 L 773,54 L 765,32 L 755,31 L 752,24 L 743,18 L 741,22 L 729,23 L 725,30 L 714,28 L 703,36 L 688,31 L 678,32 L 672,25 L 664,26 L 661,22 L 643,24 L 618,32 L 619,40 L 607,54 L 606,65 L 595,83 L 570,89 L 570,94 L 560,104 L 552,105 L 544,112 L 537,112 L 532,106 L 522,107 L 521,101 L 515,97 L 507,99 L 504,93 L 499,91 L 485,103 L 480,121 L 457,123 L 448,129 L 416,127 L 413,130 L 393,131 L 390,142 L 382,145 L 383,165 L 391,170 L 391,177 L 379,180 L 366,191 L 340,189 L 322,195 L 300,194 L 288,190 L 245,193 L 236,190 L 223,176 L 216,176 L 211,167 L 200,161 L 199,155 L 186,141 L 178,141 L 168,135 L 157,143 L 155,161 L 145,166 L 149,170 L 150,197 L 122,201 L 120,196 L 116,202 L 104,202 L 100,191 L 83,186 L 79,187 L 78,194 L 63,202 L 82,211 L 92,210 L 99,233 L 93,237 L 92,248 L 80,256 L 63,255 L 67,284 L 62,287 L 58,296 L 63,299 L 63,307 L 69,308 L 69,315 L 64,318 L 68,322 L 68,328 L 63,330 L 65,338 L 38,336 L 36,344 L 25,350 L 15,363 L 38,361 L 45,368 L 45,376 L 41,378 L 42,386 L 49,396 L 55,398 L 55,405 L 50,409 L 68,427 L 69,438 L 85,445 L 93,458 L 110,465 L 116,472 L 118,484 L 129,495 L 158,512 L 158,519 L 162,520 L 169,531 L 170,541 L 181,548 L 181,554 L 212,556 L 220,563 L 226,576 L 248,582 L 252,588 L 273,586 L 282,591 L 288,588 L 303,588 L 311,594 L 327,592 L 333,597 L 340,588 L 345,588 L 355,581 L 366,562 L 373,562 L 385,569 L 387,563 L 393,563 L 398,558 L 412,559 L 416,552 L 423,552 L 422,543 L 427,537 L 433,537 L 439,546 L 453,545 L 458,538 L 472,535 L 478,526 L 486,521 L 486,515 L 492,509 L 513,507 L 522,515 L 530,517 L 546,507 L 556,507 L 560,514 L 571,511 L 592,518 L 596,512 L 619,514 L 624,505 L 630,505 L 644,516 L 654,510 L 656,501 L 660,500 L 662,486 L 678,484 L 683,488 L 704,491 L 710,480 L 718,480 L 723,459 L 734,457 L 737,452 L 730,444 L 731,431 L 736,424 L 735,417 L 739,412 L 750,413 L 755,407 L 754,400 L 762,399 L 765,394 L 762,389 L 764,370 L 774,364 L 775,351 L 784,345 L 783,328 L 793,314 L 800,312 L 802,302 L 808,297 L 807,286 L 818,260 L 830,254 L 828,229 L 843,213 L 849,212 L 860,184 L 869,179 L 881,180 L 885,168 L 907,173 L 916,170 L 921,160 L 927,160 L 927,149 L 937,145 L 943,136 L 938,132 Z"/>${areas}<path class="map-outer-line" d="M 940,117 L 933,106 L 922,106 L 915,111 L 904,110 L 896,90 L 889,82 L 871,81 L 861,61 L 853,57 L 853,50 L 848,47 L 837,56 L 814,57 L 800,61 L 798,66 L 782,64 L 773,54 L 765,32 L 755,31 L 752,24 L 743,18 L 741,22 L 729,23 L 725,30 L 714,28 L 703,36 L 688,31 L 678,32 L 672,25 L 664,26 L 661,22 L 643,24 L 618,32 L 619,40 L 607,54 L 606,65 L 595,83 L 570,89 L 570,94 L 560,104 L 552,105 L 544,112 L 537,112 L 532,106 L 522,107 L 521,101 L 515,97 L 507,99 L 504,93 L 499,91 L 485,103 L 480,121 L 457,123 L 448,129 L 416,127 L 413,130 L 393,131 L 390,142 L 382,145 L 383,165 L 391,170 L 391,177 L 379,180 L 366,191 L 340,189 L 322,195 L 300,194 L 288,190 L 245,193 L 236,190 L 223,176 L 216,176 L 211,167 L 200,161 L 199,155 L 186,141 L 178,141 L 168,135 L 157,143 L 155,161 L 145,166 L 149,170 L 150,197 L 122,201 L 120,196 L 116,202 L 104,202 L 100,191 L 83,186 L 79,187 L 78,194 L 63,202 L 82,211 L 92,210 L 99,233 L 93,237 L 92,248 L 80,256 L 63,255 L 67,284 L 62,287 L 58,296 L 63,299 L 63,307 L 69,308 L 69,315 L 64,318 L 68,322 L 68,328 L 63,330 L 65,338 L 38,336 L 36,344 L 25,350 L 15,363 L 38,361 L 45,368 L 45,376 L 41,378 L 42,386 L 49,396 L 55,398 L 55,405 L 50,409 L 68,427 L 69,438 L 85,445 L 93,458 L 110,465 L 116,472 L 118,484 L 129,495 L 158,512 L 158,519 L 162,520 L 169,531 L 170,541 L 181,548 L 181,554 L 212,556 L 220,563 L 226,576 L 248,582 L 252,588 L 273,586 L 282,591 L 288,588 L 303,588 L 311,594 L 327,592 L 333,597 L 340,588 L 345,588 L 355,581 L 366,562 L 373,562 L 385,569 L 387,563 L 393,563 L 398,558 L 412,559 L 416,552 L 423,552 L 422,543 L 427,537 L 433,537 L 439,546 L 453,545 L 458,538 L 472,535 L 478,526 L 486,521 L 486,515 L 492,509 L 513,507 L 522,515 L 530,517 L 546,507 L 556,507 L 560,514 L 571,511 L 592,518 L 596,512 L 619,514 L 624,505 L 630,505 L 644,516 L 654,510 L 656,501 L 660,500 L 662,486 L 678,484 L 683,488 L 704,491 L 710,480 L 718,480 L 723,459 L 734,457 L 737,452 L 730,444 L 731,431 L 736,424 L 735,417 L 739,412 L 746,411 L 750,413 L 755,407 L 752,400 L 754,398 L 762,399 L 765,394 L 759,387 L 764,377 L 763,371 L 774,364 L 773,353 L 784,345 L 784,335 L 781,334 L 777,339 L 772,340 L 769,348 L 759,351 L 753,349 L 750,345 L 733,342 L 722,335 L 723,330 L 721,327 L 731,320 L 730,310 L 722,310 L 702,301 L 697,302 L 691,294 Z"/>${areas}<text class="map-caption" x="480" y="618">MAGYARORSZÁG · 19 VÁRMEGYE + BUDAPEST</text></svg></div>`;
  document.querySelectorAll('.county[data-territory]').forEach(g=>{
    const choose=()=>selectTerritory(Number(g.dataset.territory));
    g.addEventListener('click',choose);
    g.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&!g.classList.contains('locked')){e.preventDefault();choose();}});
  });
  const last=roomData.lastResult;
- let statusText=stage==='claim'?`Területfoglalás · még ${freeCount} szabad terület`:`Csatafázis · ${Number(roomData.battleTurnCount)||0}/${(Number(roomData.battleRounds)||5)*order.length} támadókör`;
+ let statusText;
+ if(stage==='claimQuiz')statusText=`Területfoglalás · ${Number(roomData.claimRound)||1}. közös kérdés · a gyorsaság dönt a helyes válaszolók között`;
+ else if(stage==='claimPick')statusText=`Területfoglalás · ${active?.name||'A játékos'} választ · még ${freeCount} szabad terület`;
+ else if(stage==='battle')statusText=`Csatafázis · ${Number(roomData.battleTurnCount)||0}/${(Number(roomData.battleRounds)||5)*order.length} támadókör`;
+ else statusText=`Területfoglalás · még ${freeCount} szabad terület`;
  $('gameStatus').textContent=last?.text?`${last.text} · ${statusText}`:statusText;
  if(!pending){
    clearQuestionTimer();clearFinalizeTimer();clearTimeoutMonitor();renderedPendingSignature='';
-   if(stage==='claim')$('questionArea').innerHTML='<div class="question-empty"><div class="empty-icon">⌖</div><div><strong>Foglaljátok el a szabad területeket!</strong><p>A soron lévő játékos válasszon egy narancssárga vármegyét. Minden terület elfoglalása után elindul a csatafázis.</p></div></div>';
-   else if(turn!==uid)$('questionArea').innerHTML=`<div class="question-empty"><div class="empty-icon">⚔</div><div><strong>${esc(active?.name||'A következő játékos')} következik</strong><p>Várj, amíg megtámad egy ellenfél által birtokolt vármegyét.</p></div></div>`;
-   else $('questionArea').innerHTML='<div class="question-empty"><div class="empty-icon">⚔</div><div><strong>Támadj meg egy ellenfelet!</strong><p>Válassz egy másik játékos által birtokolt vármegyét. A támadó és a védő ugyanazt a kérdést kapja.</p></div></div>';
+   if(stage==='claimQuiz')$('questionArea').innerHTML='<div class="question-empty"><div class="empty-icon">?</div><div><strong>A közös kérdés előkészítése…</strong><p>Minden játékos ugyanazt a kérdést kapja. A két leggyorsabb helyes válaszoló választhat területet.</p></div></div>';
+   else if(stage==='claimPick')$('questionArea').innerHTML=turn===uid?`<div class="question-empty"><div class="empty-icon">⌖</div><div><strong>Válassz egy szabad vármegyét!</strong><p>${Number(roomData.claimPicksAllowed?.[uid]||0)-Number(roomData.claimPicksMade?.[uid]||0)} területet választhatsz ebben a körben. Kattints a térkép egy narancssárga vármegyéjére.</p></div></div>`:`<div class="question-empty"><div class="empty-icon">⌖</div><div><strong>${esc(active?.name||'A játékos')} választ területet</strong><p>Az első helyezett két területet, a második egyet választhat. A következő közös kérdés ezután indul.</p></div></div>`;
+   else if(stage==='battle'&&turn!==uid)$('questionArea').innerHTML=`<div class="question-empty"><div class="empty-icon">⚔</div><div><strong>${esc(active?.name||'A következő játékos')} következik</strong><p>Várj, amíg megtámad egy ellenfél által birtokolt vármegyét.</p></div></div>`;
+   else if(stage==='battle')$('questionArea').innerHTML='<div class="question-empty"><div class="empty-icon">⚔</div><div><strong>Támadj meg egy ellenfelet!</strong><p>Válassz egy másik játékos által birtokolt vármegyét. A támadó és a védő ugyanazt a kérdést kapja.</p></div></div>';
+   else $('questionArea').innerHTML='<div class="question-empty"><div class="empty-icon">⌖</div><div><strong>Foglaljatok területet!</strong><p>Válassz egy szabad vármegyét.</p></div></div>';
    return;
  }
- if(pending.reveal){
-   const q=pending.questionsByUid?.[uid]||pending.question||pending.questionsByUid?.[pending.attackerUid];
-   if(q)renderRevealQuestion(pending,q);else renderSpectatorQuestion(pending,players);
-   scheduleFinalizePending(pending);
-   return;
- }
+ if(pending.reveal){const q=pending.question||pending.questionsByUid?.[uid]||pending.questionsByUid?.[pending.attackerUid];if(q)renderRevealQuestion(pending,q);else renderSpectatorQuestion(pending,players);scheduleFinalizePending(pending);return;}
  clearFinalizeTimer();
- if(pending.mode==='claim'){
-   if(uid===pending.attackerUid){renderQuestion(pending,pending.questionsByUid?.[uid]||pending.question);}
+ if(pending.mode==='claimQuiz'){
+   const participants=participantsForQuestion(pending,order);
+   if(participants.includes(uid)){if(pending.answers?.[uid])renderAnsweredWaiting(pending,pending.question,players);else renderQuestion(pending,pending.question);}
    else renderSpectatorQuestion(pending,players);
- }else if(uid===pending.attackerUid||uid===pending.defenderUid){
-   const q=pending.questionsByUid?.[uid];const already=!!pending.answers?.[uid];
-   if(already)renderAnsweredWaiting(pending,q,players);else renderQuestion(pending,q);
- }else renderSpectatorQuestion(pending,players);
+ }else if(pending.mode==='claim'){
+   if(uid===pending.attackerUid){renderQuestion(pending,pending.questionsByUid?.[uid]||pending.question);}else renderSpectatorQuestion(pending,players);
+ }else if(uid===pending.attackerUid||uid===pending.defenderUid){const q=pending.question||pending.questionsByUid?.[uid];if(pending.answers?.[uid])renderAnsweredWaiting(pending,q,players);else renderQuestion(pending,q);}
+ else renderSpectatorQuestion(pending,players);
 }
-
 async function selectTerritory(i){
- if(!roomData||roomData.turn!==uid||roomData.pendingQuestion||roomData.phase!=='playing')return;
+ if(!roomData||roomData.phase!=='playing'||roomData.pendingQuestion)return;
  const territories=roomData.territories||[],territory=territories[i],stage=roomData.stage||'claim';
- if(!territory)return;
+ if(!territory||stage==='claimQuiz')return;
+ if(roomData.turn!==uid)return;
+ if(stage==='claimPick'){
+   if(territory.owner)return;
+   await pickClaimTerritory(i);return;
+ }
  if(stage==='claim'&&territory.owner)return;
  if(stage==='battle'&&(!territory.owner||territory.owner===uid))return;
  const qs=roomData.questions||sample;if(!qs.length)return;
  const qi=Number(roomData.questionIndex)||0,attackerUid=uid,defenderUid=stage==='battle'?territory.owner:null;
  const question=qs[qi%qs.length];
- const questionsByUid=defenderUid?{[attackerUid]:question,[defenderUid]:question}:{[attackerUid]:question};
- const pending={id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`,mode:stage,attackerUid,defenderUid,territoryIndex:i,territoryName:territory.name,questionIndex:qi,questionsByUid,question,startedAt:Date.now(),answers:{},reveal:null};
+ const pending={id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`,mode:stage,attackerUid,defenderUid,territoryIndex:i,territoryName:territory.name,questionIndex:qi,questionsByUid:defenderUid?{[attackerUid]:question,[defenderUid]:question}:{[attackerUid]:question},question,startedAt:serverNow(),answers:{},reveal:null};
  selectedTerritory=i;renderedPendingSignature='';
  try{await update(ref(db,'rooms/'+roomId),{pendingQuestion:pending});}
  catch(e){console.error(e);selectedTerritory=null;$('questionArea').innerHTML='<p class="error">Nem sikerült elindítani a kérdést. Ellenőrizd a Firebase-jogosultságokat, majd próbáld újra.</p>';}
+}
+async function pickClaimTerritory(index){
+ if(!roomId)return;
+ try{
+  const result=await runTransaction(ref(db,'rooms/'+roomId),state=>{
+   if(!state||state.phase!=='playing'||state.stage!=='claimPick'||state.turn!==uid||state.pendingQuestion)return;
+   const territories=state.territories||[],t=territories[index];if(!t||t.owner)return;
+   const players=state.players||{},order=state.turnOrder||Object.keys(players);
+   t.owner=uid;
+   const made={...(state.claimPicksMade||{})},allowed=state.claimPicksAllowed||{},awardOrder=state.claimAwardOrder||[];
+   made[uid]=(Number(made[uid])||0)+1;state.claimPicksMade=made;state.territories=territories;
+   const freeRemain=territories.some(x=>!x.owner);
+   if(!freeRemain){
+    state.stage='battle';state.turn=nextPlayerWithLand(order,0,territories);state.battleTurnCount=0;state.pendingQuestion=null;
+    state.lastResult={text:`Minden terület gazdára talált. Kezdődnek a csaták!`,by:uid,at:Date.now()};return state;
+   }
+   let nextUid=null;
+   if(made[uid]<(Number(allowed[uid])||0))nextUid=uid;
+   else nextUid=awardOrder.find(id=>(Number(made[id])||0)<(Number(allowed[id])||0));
+   if(nextUid){state.turn=nextUid;state.lastResult={text:`${players[uid]?.name||'A játékos'} elfoglalta ${t.name} vármegyét.`,by:uid,at:Date.now()};return state;}
+   state.stage='claimQuiz';state.turn=null;state.claimRound=(Number(state.claimRound)||1)+1;state.claimRanking=[];state.claimAwardOrder=[];state.claimPicksAllowed={};state.claimPicksMade={};
+   state.pendingQuestion=makeClaimQuizPending(state);
+   state.lastResult={text:`${players[uid]?.name||'A játékos'} elfoglalta ${t.name} vármegyét. Következik a ${state.claimRound}. közös kérdés.`,by:uid,at:Date.now()};return state;
+  });
+  if(!result.committed){const q=$('questionArea');if(q)q.insertAdjacentHTML('beforeend','<p class="error">Ezt a területet már elfoglalták, vagy most nem te választasz.</p>');}
+  selectedTerritory=null;renderedPendingSignature='';
+ }catch(e){console.error('Területválasztási hiba:',e);const q=$('questionArea');if(q)q.insertAdjacentHTML('beforeend',`<p class="error">Nem sikerült elfoglalni a területet: ${esc(e.message||'kapcsolódási hiba')}</p>`);}
 }
 let questionTimerInterval=null,questionSecondsLeft=20,questionSecondsMax=20,pickedAnswer=null,activePending=null,renderedPendingSignature='',finalizeTimer=null,finalizeTimerId=null,timeoutMonitor=null,timeoutMonitorId=null;
 function clearQuestionTimer(){if(questionTimerInterval){clearInterval(questionTimerInterval);questionTimerInterval=null;}}
 function clearTimeoutMonitor(){if(timeoutMonitor){clearTimeout(timeoutMonitor);timeoutMonitor=null;}timeoutMonitorId=null;}
 function clearFinalizeTimer(){if(finalizeTimer){clearTimeout(finalizeTimer);finalizeTimer=null;}finalizeTimerId=null;}
 function updateTimerUI(){const text=$('questionTimer');if(text)text.textContent=String(questionSecondsLeft);const ring=$('questionTimerRing');if(ring)ring.style.setProperty('--timer-angle',`${Math.max(0,questionSecondsLeft)/Math.max(1,questionSecondsMax)*360}deg`);}
-function startQuestionTimer(pending){clearQuestionTimer();questionSecondsMax=Math.max(5,Number(roomData?.questionTime)||20);const startedAt=Number(pending.startedAt)||Date.now();const elapsed=Math.max(0,Math.floor((Date.now()-startedAt)/1000));questionSecondsLeft=Math.max(0,questionSecondsMax-elapsed);updateTimerUI();scheduleTimeoutMonitor(pending);if(questionSecondsLeft<=0){Promise.resolve().then(()=>submitAnswer(-1,pending));return;}questionTimerInterval=setInterval(()=>{questionSecondsLeft=Math.max(0,questionSecondsLeft-1);updateTimerUI();if(questionSecondsLeft<=0){clearQuestionTimer();submitAnswer(-1,pending);}},1000);}
-function scheduleTimeoutMonitor(pending){if(!pending?.id||timeoutMonitorId===pending.id)return;clearTimeoutMonitor();timeoutMonitorId=pending.id;const deadline=(Number(pending.startedAt)||Date.now())+(Math.max(5,Number(roomData?.questionTime)||20)*1000)+250;timeoutMonitor=setTimeout(async()=>{if(!roomId)return;try{await runTransaction(ref(db,'rooms/'+roomId),state=>{const p=state?.pendingQuestion;if(!state||state.phase!=='playing'||!p||p.id!==pending.id||p.reveal)return;const participants=p.mode==='battle'?[p.attackerUid,p.defenderUid]:[p.attackerUid];p.answers={...(p.answers||{})};for(const id of participants){if(id&&!p.answers[id])p.answers[id]={answer:-1,correct:false,answeredAt:Date.now(),timedOut:true};}if(participants.every(id=>id&&p.answers[id])){const a=p.answers[p.attackerUid],d=p.mode==='battle'?p.answers[p.defenderUid]:null;p.reveal={revealedAt:Date.now(),answers:p.answers,attackerWon:p.mode==='battle'&&!!a?.correct&&!d?.correct};}state.pendingQuestion=p;return state;});}catch(e){console.error('Kérdésidő lezárási hiba:',e);}},Math.max(0,deadline-Date.now()));}
+function startQuestionTimer(pending){clearQuestionTimer();questionSecondsMax=Math.max(5,Number(roomData?.questionTime)||20);const startedAt=Number(pending.startedAt)||serverNow();const elapsed=Math.max(0,Math.floor((serverNow()-startedAt)/1000));questionSecondsLeft=Math.max(0,questionSecondsMax-elapsed);updateTimerUI();scheduleTimeoutMonitor(pending);if(questionSecondsLeft<=0){Promise.resolve().then(()=>submitAnswer(-1,pending));return;}questionTimerInterval=setInterval(()=>{questionSecondsLeft=Math.max(0,questionSecondsLeft-1);updateTimerUI();if(questionSecondsLeft<=0){clearQuestionTimer();submitAnswer(-1,pending);}},1000);}
+function scheduleTimeoutMonitor(pending){
+ if(!pending?.id||timeoutMonitorId===pending.id)return;clearTimeoutMonitor();timeoutMonitorId=pending.id;
+ const deadline=(Number(pending.startedAt)||serverNow())+(Math.max(5,Number(roomData?.questionTime)||20)*1000)+250;
+ timeoutMonitor=setTimeout(async()=>{if(!roomId)return;try{await runTransaction(ref(db,'rooms/'+roomId),state=>{
+  const p=state?.pendingQuestion;if(!state||state.phase!=='playing'||!p||p.id!==pending.id||p.reveal)return;
+  const participants=participantsForQuestion(p,state.turnOrder||Object.keys(state.players||{}));p.answers={...(p.answers||{})};
+  const now=serverNow();for(const id of participants){if(id&&!p.answers[id])p.answers[id]={answer:-1,correct:false,answeredAt:now,elapsedMs:Math.max(0,(Number(p.startedAt)||now)+((Number(state.questionTime)||20)*1000)- (Number(p.startedAt)||now)),timedOut:true};}
+  if(participants.every(id=>id&&p.answers[id]))p.reveal=makeQuestionReveal(p,p.answers,serverNow());
+  state.pendingQuestion=p;return state;
+ });}catch(e){console.error('Kérdésidő lezárási hiba:',e);}},Math.max(0,deadline-serverNow()));
+}
 function answerOptionsHtml(q,answer=null,revealed=false){return (q?.options||[]).map((o,i)=>{const classes=['option',answer?.answer===i?'chosen':'',revealed&&i===q.correct?'correct':'',revealed&&answer&&answer.answer===i&&i!==q.correct?'wrong':''].filter(Boolean).join(' ');return `<button class="option ${classes}" data-answer="${i}" type="button"><span class="option-letter">${'ABCD'[i]}</span><span class="option-text">${esc(o)}</span></button>`;}).join('');}
 function resultLine(pending,uidForQuestion,players){
  const r=pending.reveal;if(!r)return '';
- if(pending.mode==='claim'){const a=r.answers?.[pending.attackerUid];return a?.correct?'Helyes válasz! A vármegye 5 másodperc múlva a tiéd lesz.':'A helyes válasz zölddel jelölve. A terület szabad marad.';}
+ if(pending.mode==='claimQuiz'){
+  const ranking=r.claimRanking||rankClaimAnswers(pending,r.answers||{});
+  if(!ranking.length)return 'Senki sem válaszolt helyesen. Új közös kérdés következik.';
+  const first=ranking[0],second=ranking[1];
+  let text=`🥇 ${players?.[first.uid]?.name||'Első helyezett'} — ${((Number(first.elapsedMs)||0)/1000).toFixed(2)} mp, 2 területet választhat.`;
+  if(second)text+=`<br>🥈 ${players?.[second.uid]?.name||'Második helyezett'} — ${((Number(second.elapsedMs)||0)/1000).toFixed(2)} mp, 1 területet választhat.`;
+  if(ranking.length>2)text+='<br>A többi helyes válaszoló most nem kap területet.';
+  return text;
+ }
+ if(pending.mode==='claim'){const a=r.answers?.[pending.attackerUid];return a?.correct?'Helyes válasz! A vármegye a választás után a tiéd lehet.':'A helyes válasz zölddel jelölve. A terület szabad marad.';}
  const attacker=players?.[pending.attackerUid]?.name||'Támadó',defender=players?.[pending.defenderUid]?.name||'Védő';
  return r.attackerWon?`${attacker} helyesen válaszolt, ${defender} hibázott — a terület gazdát cserél!`:`${defender} megvédte a területet. A vármegye a védőnél marad.`;
 }
 function renderQuestion(pending,q){
  if(!pending?.id||!q)return;
- const answer=pending.answers?.[uid];
- if(answer){renderAnsweredWaiting(pending,q,roomData.players||{});return;}
- const signature=`${pending.id}:active`;if(signature===renderedPendingSignature)return;renderedPendingSignature=signature;clearQuestionTimer();activePending=pending;
+ const answer=pending.answers?.[uid];if(answer){renderAnsweredWaiting(pending,q,roomData.players||{});return;}
+ const signature=`${pending.id}:active`;if(signature===renderedPendingSignature)return;renderedPendingSignature=signature;clearQuestionTimer();activePending=pending;pickedAnswer=null;
  const qs=roomData.questions||sample,mode=pending.mode||'claim';
- pickedAnswer=null;
- const label=mode==='battle'?`${uid===pending.attackerUid?'TÁMADÁS':'VÉDEKEZÉS'} · ${esc(pending.territoryName||roomData.territories[pending.territoryIndex]?.name||'VÁRMEGYE')}`:`TERÜLETFOGLALÁS · ${esc(pending.territoryName||roomData.territories[pending.territoryIndex]?.name||'VÁRMEGYE')}`;
- const sub=mode==='battle'?(uid===pending.attackerUid?'Ugyanazt a kérdést kapod, mint a védő. Ha te helyesen, ő pedig hibásan válaszol, megszerzed a területet.':'Ugyanazt a kérdést kapod, mint a támadó. Ha helyesen válaszolsz, megvéded a területet.'):'Válaszolj helyesen a terület elfoglalásához.';
- $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip"><span class="subject-icon">▣</span>${esc(roomData.title||'Tanulós játék')}</span><span class="question-progress">${(pending.questionIndex??0)+1} / ${qs.length}</span></div><div class="quiz-grid"><div class="quiz-main"><div class="eyebrow">${label}</div><h3>${esc(q.question)}</h3><div class="options">${answerOptionsHtml(q)}</div><div class="result muted">${sub}</div></div><aside class="quiz-side"><div class="timer-ring" id="questionTimerRing"><span id="questionTimer">${Number(roomData.questionTime)||20}</span></div><div class="timer-caption">másodperc maradt</div><button id="submitAnswer" class="primary submit-answer" type="button" disabled>Válasz küldése</button></aside></div>`;
+ const label=mode==='battle'?`${uid===pending.attackerUid?'TÁMADÁS':'VÉDEKEZÉS'} · ${esc(pending.territoryName||'VÁRMEGYE')}`:mode==='claimQuiz'?'KÖZÖS KÉRDÉS · TERÜLETFOGLALÁS':`TERÜLETFOGLALÁS · ${esc(pending.territoryName||'VÁRMEGYE')}`;
+ const sub=mode==='battle'?(uid===pending.attackerUid?'Ugyanazt a kérdést kapod, mint a védő. Ha te helyesen, ő pedig hibásan válaszol, megszerzed a területet.':'Ugyanazt a kérdést kapod, mint a támadó. Ha helyesen válaszolsz, megvéded a területet.'):mode==='claimQuiz'?'Mindenki ugyanarra a kérdésre válaszol. Az első helyes válaszoló két, a második egy vármegyét választhat. A sorrendet a gyorsaság dönti el.':'Válaszolj helyesen a terület elfoglalásához.';
+ $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip"><span class="subject-icon">${mode==='battle'?'⚔':'▣'}</span>${esc(roomData.title||'Tanulós játék')}</span><span class="question-progress">${(pending.questionIndex??0)+1} / ${qs.length}</span></div><div class="quiz-grid"><div class="quiz-main"><div class="eyebrow">${label}</div><h3>${esc(q.question)}</h3><div class="options">${answerOptionsHtml(q)}</div><div class="result muted">${sub}</div></div><aside class="quiz-side"><div class="timer-ring" id="questionTimerRing"><span id="questionTimer">${Number(roomData.questionTime)||20}</span></div><div class="timer-caption">másodperc maradt</div><button id="submitAnswer" class="primary submit-answer" type="button" disabled>Válasz küldése</button></aside></div>`;
  document.querySelectorAll('#questionArea [data-answer]').forEach(b=>b.addEventListener('click',()=>{if(answerBusy||roomData.pendingQuestion?.answers?.[uid])return;pickedAnswer=Number(b.dataset.answer);document.querySelectorAll('#questionArea [data-answer]').forEach(x=>x.classList.toggle('chosen',x===b));$('submitAnswer').disabled=false;}));
  $('submitAnswer').addEventListener('click',()=>{if(pickedAnswer!==null)submitAnswer(pickedAnswer,pending);});startQuestionTimer(pending);
 }
 function renderAnsweredWaiting(pending,q,players){
  if(!pending?.id||!q)return;clearQuestionTimer();scheduleTimeoutMonitor(pending);const signature=`${pending.id}:answered`;if(signature===renderedPendingSignature)return;renderedPendingSignature=signature;
+ if(pending.mode==='claimQuiz'){
+  const participants=participantsForQuestion(pending,roomData.turnOrder||Object.keys(players));
+  const waiting=participants.filter(id=>!pending.answers?.[id]).length;
+  $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">Közös területfoglalás</span><span class="question-progress">${Object.keys(pending.answers||{}).length} / ${participants.length} válasz</span></div><div class="answered-wait"><div class="answered-check">✓</div><div><h3>A válaszodat rögzítettük.</h3><p>${waiting?`Még ${waiting} játékos válaszára várunk.`:'Minden válasz beérkezett.'} Ezután a leggyorsabb helyes válaszolók választhatnak területet.</p></div></div>`;return;
+ }
  const opponentId=uid===pending.attackerUid?pending.defenderUid:pending.attackerUid;const opponentName=players?.[opponentId]?.name||'ellenfél';
  $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">⚔ ${pending.mode==='battle'?'Csata folyamatban':'Területfoglalás'}</span><span class="question-progress">${(pending.questionIndex??0)+1} / ${(roomData.questions||sample).length}</span></div><div class="answered-wait"><div class="answered-check">✓</div><div><h3>A válaszodat rögzítettük.</h3><p>Várunk, amíg ${esc(opponentName)} is válaszol. Ezután 5 másodpercig megjelenik a helyes válasz.</p></div></div>`;
 }
 function renderSpectatorQuestion(pending,players){
  clearQuestionTimer();if(!pending.reveal)scheduleTimeoutMonitor(pending);const signature=`${pending.id}:spectator:${pending.reveal?'reveal':'waiting'}`;if(signature===renderedPendingSignature)return;renderedPendingSignature=signature;
  const attacker=players?.[pending.attackerUid]?.name||'A támadó',defender=players?.[pending.defenderUid]?.name||'A védő';
- if(pending.mode==='battle')$('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">⚔ Csata</span><span class="question-progress">${(pending.questionIndex??0)+1} / ${(roomData.questions||sample).length}</span></div><div class="question-empty"><div class="empty-icon">⚔</div><div><strong>${esc(attacker)} vs. ${esc(defender)}</strong><p>${esc(pending.territoryName||'A kiválasztott vármegye')} a tét. Mindkét játékos ugyanarra a kérdésre és ugyanazokra a válaszlehetőségekre válaszol. Az eredményt a párbaj végén látjátok.</p></div></div>`;
- else $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">Területfoglalás</span></div><div class="question-empty"><div class="empty-icon">⌖</div><div><strong>${esc(attacker)} próbál területet foglalni</strong><p>A kérdés és a helyes válasz az aktív játékosnak jelenik meg.</p></div></div>`;
+ if(pending.mode==='claimQuiz')$('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">Közös területfoglalás</span></div><div class="question-empty"><div class="empty-icon">?</div><div><strong>Közös kérdés folyamatban</strong><p>${(pending.participantUids||[]).length} játékos válaszol ugyanarra a kérdésre. A leggyorsabb helyes válaszolók választhatnak területet.</p></div></div>`;
+ else if(pending.mode==='battle')$('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">⚔ Csata</span><span class="question-progress">${(pending.questionIndex??0)+1} / ${(roomData.questions||sample).length}</span></div><div class="question-empty"><div class="empty-icon">⚔</div><div><strong>${esc(attacker)} vs. ${esc(defender)}</strong><p>${esc(pending.territoryName||'A kiválasztott vármegye')} a tét. Mindkét játékos ugyanarra a kérdésre válaszol. Az eredményt a párbaj végén látjátok.</p></div></div>`;
+ else $('questionArea').innerHTML=`<div class="question-empty"><div class="empty-icon">⌖</div><div><strong>${esc(attacker)} próbál területet foglalni</strong><p>A kérdés és a helyes válasz az aktív játékosnak jelenik meg.</p></div></div>`;
 }
 function renderRevealQuestion(pending,q){
  if(!pending?.id||!q)return;clearQuestionTimer();const ans=pending.reveal?.answers?.[uid]||null;const signature=`${pending.id}:reveal:${uid}`;if(signature===renderedPendingSignature)return;renderedPendingSignature=signature;
- const mode=pending.mode||'claim',players=roomData.players||{};const label=mode==='battle'?`CSATA · ${esc(pending.territoryName||'VÁRMEGYE')}`:`TERÜLETFOGLALÁS · ${esc(pending.territoryName||'VÁRMEGYE')}`;
- let result=resultLine(pending,uid,players);
- if(mode==='battle'){const r=pending.reveal;const a=r.answers?.[pending.attackerUid],d=r.answers?.[pending.defenderUid];result=`${result}<br>${esc(players[pending.attackerUid]?.name||'Támadó')}: ${a?.correct?'helyes':'hibás'} · ${esc(players[pending.defenderUid]?.name||'Védő')}: ${d?.correct?'helyes':'hibás'}`;}
- const countdown=Math.max(0,5-Math.floor((Date.now()-(Number(pending.reveal.revealedAt)||Date.now()))/1000));
- $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">${mode==='battle'?'⚔ Csata eredménye':'✓ Helyes válasz'}</span><span class="question-progress">Következő lépés: ${countdown} mp</span></div><div class="quiz-grid"><div class="quiz-main"><div class="eyebrow">${label} · HELYES VÁLASZ ZÖLDDEL</div><h3>${esc(q.question)}</h3><div class="options">${answerOptionsHtml(q,ans,true)}</div><div class="result ${pending.reveal.attackerWon?'success-result':mode==='claim'&&pending.reveal.answers?.[pending.attackerUid]?.correct?'success-result':'error-result'}">${result}</div></div><aside class="quiz-side"><div class="timer-ring reveal-ring"><span>${countdown}</span></div><div class="timer-caption">másodperc az eredményig</div><div class="reveal-hint">A helyes válasz zölddel jelölve</div></aside></div>`;
+ const mode=pending.mode||'battle',players=roomData.players||{};const label=mode==='battle'?`CSATA · ${esc(pending.territoryName||'VÁRMEGYE')}`:mode==='claimQuiz'?'KÖZÖS TERÜLETFOGLALÓ KÉRDÉS':`TERÜLETFOGLALÁS · ${esc(pending.territoryName||'VÁRMEGYE')}`;
+ let result=resultLine(pending,uid,players),banner='';
+ if(mode==='battle'){
+  const r=pending.reveal,a=r.answers?.[pending.attackerUid],d=r.answers?.[pending.defenderUid],attackerWon=!!r.attackerWon;
+  const winnerId=attackerWon?pending.attackerUid:pending.defenderUid,winnerName=players?.[winnerId]?.name||(attackerWon?'A támadó':'A védő');
+  banner=`<div class="battle-winner-banner ${attackerWon?'attacker-winner':'defender-winner'}"><span class="battle-winner-icon">${attackerWon?'⚔':'🛡'}</span><div><small>CSATA EREDMÉNYE</small><strong>${esc(winnerName)} ${attackerWon?'MEGNYERTE A CSATÁT!':'MEGVÉDTE A TERÜLETET!'}</strong></div></div>`;
+  result=`${result}<br>${esc(players[pending.attackerUid]?.name||'Támadó')}: ${a?.correct?'helyes':'hibás'} · ${esc(players[pending.defenderUid]?.name||'Védő')}: ${d?.correct?'helyes':'hibás'}`;
+ }
+ const countdown=Math.max(0,5-Math.floor((serverNow()-(Number(pending.reveal.revealedAt)||serverNow()))/1000));
+ $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">${mode==='battle'?'⚔ Csata eredménye':mode==='claimQuiz'?'🏁 Területfoglalás eredménye':'✓ Helyes válasz'}</span><span class="question-progress">Következő lépés: ${countdown} mp</span></div>${banner}<div class="quiz-grid"><div class="quiz-main"><div class="eyebrow">${label} · HELYES VÁLASZ ZÖLDDEL</div><h3>${esc(q.question)}</h3><div class="options">${answerOptionsHtml(q,ans,true)}</div><div class="result ${mode==='battle'?(pending.reveal.attackerWon?'success-result':'error-result'):mode==='claimQuiz'?(pending.reveal.claimRanking?.length?'success-result':'error-result'):'muted'}">${result}</div></div><aside class="quiz-side"><div class="timer-ring reveal-ring"><span>${countdown}</span></div><div class="timer-caption">másodperc az eredményig</div><div class="reveal-hint">A helyes válasz zölddel jelölve</div></aside></div>`;
  document.querySelectorAll('#questionArea [data-answer]').forEach(b=>b.disabled=true);startRevealCountdown(pending);
 }
 function startRevealCountdown(pending){
- clearQuestionTimer();const revealedAt=Number(pending.reveal?.revealedAt)||Date.now();
- const tick=()=>{const left=Math.max(0,5-Math.floor((Date.now()-revealedAt)/1000));const progress=document.querySelector('#questionArea .question-progress');if(progress)progress.textContent=`Következő lépés: ${left} mp`;const ring=$('questionTimerRing');if(ring)ring.style.setProperty('--timer-angle',`${left/5*360}deg`);const number=ring?.querySelector('span');if(number)number.textContent=String(left);if(left<=0)clearQuestionTimer();};
- tick();if(Date.now()<revealedAt+5000)questionTimerInterval=setInterval(tick,200);
+ clearQuestionTimer();const revealedAt=Number(pending.reveal?.revealedAt)||serverNow();
+ const tick=()=>{const left=Math.max(0,5-Math.floor((serverNow()-revealedAt)/1000));const progress=document.querySelector('#questionArea .question-progress');if(progress)progress.textContent=`Következő lépés: ${left} mp`;const ring=$('questionTimerRing');if(ring)ring.style.setProperty('--timer-angle',`${left/5*360}deg`);const number=ring?.querySelector('span');if(number)number.textContent=String(left);if(left<=0)clearQuestionTimer();};
+ tick();if(serverNow()<revealedAt+5000)questionTimerInterval=setInterval(tick,200);
 }
 async function submitAnswer(answer,pending){
  if(answerBusy||!roomId||!pending?.id)return;answerBusy=true;clearQuestionTimer();
  try{
-   const result=await runTransaction(ref(db,'rooms/'+roomId),state=>{
-     if(!state||state.phase!=='playing'||!state.pendingQuestion||state.pendingQuestion.id!==pending.id)return;
-     const p=state.pendingQuestion,participants=p.mode==='battle'?[p.attackerUid,p.defenderUid]:[p.attackerUid];
-     if(!participants.includes(uid)||p.answers?.[uid]||p.reveal)return;
-     const q=p.questionsByUid?.[uid]||p.question;if(!q)return;
-     p.answers={...(p.answers||{}),[uid]:{answer,correct:answer===q.correct,answeredAt:Date.now()}};
-     if(participants.every(id=>id&&p.answers?.[id])){
-       const a=p.answers[p.attackerUid],d=p.mode==='battle'?p.answers[p.defenderUid]:null;
-       p.reveal={revealedAt:Date.now(),answers:p.answers,attackerWon:p.mode==='battle'&&!!a?.correct&&!d?.correct};
-     }
-     state.pendingQuestion=p;return state;
-   });
-   if(!result.committed){const r=$('questionArea');if(r)r.insertAdjacentHTML('beforeend','<p class="error">A válasz már rögzítve lett, vagy a kérdés lezárult.</p>');}
+  const result=await runTransaction(ref(db,'rooms/'+roomId),state=>{
+   if(!state||state.phase!=='playing'||!state.pendingQuestion||state.pendingQuestion.id!==pending.id)return;
+   const p=state.pendingQuestion,participants=participantsForQuestion(p,state.turnOrder||Object.keys(state.players||{}));
+   if(!participants.includes(uid)||p.answers?.[uid]||p.reveal)return;
+   const q=p.question||p.questionsByUid?.[uid];if(!q)return;
+   const now=serverNow(),started=Number(p.startedAt)||now;
+   p.answers={...(p.answers||{}),[uid]:{answer,correct:answer===q.correct,answeredAt:now,elapsedMs:Math.max(0,now-started)}};
+   if(participants.every(id=>id&&p.answers?.[id]))p.reveal=makeQuestionReveal(p,p.answers,serverNow());
+   state.pendingQuestion=p;return state;
+  });
+  if(!result.committed){const r=$('questionArea');if(r)r.insertAdjacentHTML('beforeend','<p class="error">A válasz már rögzítve lett, vagy a kérdés lezárult.</p>');}
  }catch(e){console.error(e);const target=$('questionArea');if(target)target.insertAdjacentHTML('beforeend',`<p class="error">Nem sikerült rögzíteni a választ: ${esc(e.message||'kapcsolódási hiba')}</p>`);}
  finally{answerBusy=false;}
 }
 function scheduleFinalizePending(pending){
  if(!pending?.reveal||!pending.id)return;if(finalizeTimerId===pending.id)return;clearFinalizeTimer();finalizeTimerId=pending.id;
- const delay=Math.max(0,(Number(pending.reveal.revealedAt)||Date.now())+5000-Date.now());finalizeTimer=setTimeout(()=>finalizePending(pending.id),delay);
+ const delay=Math.max(0,(Number(pending.reveal.revealedAt)||serverNow())+5000-serverNow());finalizeTimer=setTimeout(()=>finalizePending(pending.id),delay);
 }
 async function finalizePending(pendingId){
  if(!roomId)return;clearFinalizeTimer();clearTimeoutMonitor();clearQuestionTimer();
  try{
-   await runTransaction(ref(db,'rooms/'+roomId),state=>{
-     const p=state?.pendingQuestion;if(!state||state.phase!=='playing'||!p||p.id!==pendingId||!p.reveal)return;
-     const players=state.players||{},order=state.turnOrder||Object.keys(players),territories=state.territories||[],qs=state.questions||sample,mode=p.mode||'claim';
-     const attackerUid=p.attackerUid,defenderUid=p.defenderUid,attacker=players[attackerUid];let text='';
-     if(mode==='claim'){
-       const answer=p.reveal.answers?.[attackerUid];if(answer?.correct&&territories[p.territoryIndex])territories[p.territoryIndex].owner=attackerUid;
-       text=answer?.correct?`${attacker?.name||'A játékos'} elfoglalta ${territories[p.territoryIndex]?.name||'a vármegyét'}.`:`${attacker?.name||'A játékos'} nem tudta elfoglalni ${territories[p.territoryIndex]?.name||'a vármegyét'}.`;
-       state.questionIndex=((Number(state.questionIndex)||0)+1)%Math.max(1,qs.length);
-       const free=territories.some(t=>!t.owner);
-       if(!free){state.stage='battle';state.battleTurnCount=0;state.turn=nextPlayerWithLand(order,0,territories);text+=' Minden terület gazdára talált: kezdődik a csatafázis!';}
-       else{const idx=order.indexOf(attackerUid);const alreadyOwns=territories.some(t=>t.owner===attackerUid);state.turn=alreadyOwns?order[(idx+1+order.length)%order.length]:attackerUid;}
-     }else{
-       const won=!!p.reveal.attackerWon;if(won&&territories[p.territoryIndex])territories[p.territoryIndex].owner=attackerUid;
-       text=won?`${attacker?.name||'A támadó'} elfoglalta ${territories[p.territoryIndex]?.name||'a vármegyét'} ${players[defenderUid]?.name||'a védő'} játékostól.`:`${players[defenderUid]?.name||'A védő'} megvédte ${territories[p.territoryIndex]?.name||'a vármegyét'}.`;
-       state.battleTurnCount=(Number(state.battleTurnCount)||0)+1;state.questionIndex=((Number(state.questionIndex)||0)+1)%Math.max(1,qs.length);
-       const alive=[...new Set(territories.map(t=>t.owner).filter(Boolean))];
-       const idx=order.indexOf(attackerUid);state.turn=nextPlayerWithLand(order,(idx+1)%order.length,territories);
-       const maxTurns=(Number(state.battleRounds)||5)*order.length;
-       if(alive.length<=1||state.battleTurnCount>=maxTurns){state.phase='finished';text+=alive.length<=1?' A többi játékos területei elfogytak.':' Lezárult az összes csatakör.';}
-     }
-     state.territories=territories;state.round=(Number(state.round)||0)+1;state.lastResult={text,by:attackerUid,correct:!!p.reveal.answers?.[attackerUid]?.correct,at:Date.now()};state.pendingQuestion=null;
-     return state;
-   });
-   selectedTerritory=null;renderedPendingSignature='';
+  await runTransaction(ref(db,'rooms/'+roomId),state=>{
+   const p=state?.pendingQuestion;if(!state||state.phase!=='playing'||!p||p.id!==pendingId||!p.reveal)return;
+   const players=state.players||{},order=state.turnOrder||Object.keys(players),territories=state.territories||[],qs=state.questions||sample,mode=p.mode||'battle';
+   const attackerUid=p.attackerUid,defenderUid=p.defenderUid,attacker=players[attackerUid];
+   if(mode==='claimQuiz'){
+    const ranking=p.reveal.claimRanking||rankClaimAnswers(p,p.reveal.answers||{}).map(a=>({uid:a.uid,elapsedMs:Number(a.elapsedMs)||0,answeredAt:Number(a.answeredAt)||Date.now()}));
+    state.questionIndex=((Number(p.questionIndex)||0)+1)%Math.max(1,qs.length);state.round=(Number(state.round)||0)+1;state.claimRanking=ranking;state.pendingQuestion=null;state.territories=territories;
+    if(!ranking.length){
+     state.stage='claimQuiz';state.turn=null;state.claimRound=(Number(state.claimRound)||1)+1;state.claimAwardOrder=[];state.claimPicksAllowed={};state.claimPicksMade={};state.pendingQuestion=makeClaimQuizPending(state);
+     state.lastResult={text:'Senki sem válaszolt helyesen. Új közös kérdés következik.',at:Date.now()};return state;
+    }
+    state.stage='claimPick';state.claimAwardOrder=ranking.slice(0,2).map(r=>r.uid);state.claimPicksAllowed={[state.claimAwardOrder[0]]:2};if(state.claimAwardOrder[1])state.claimPicksAllowed[state.claimAwardOrder[1]]=1;state.claimPicksMade={};state.turn=state.claimAwardOrder[0];
+    const firstName=players[state.claimAwardOrder[0]]?.name||'Az első helyezett',secondName=state.claimAwardOrder[1]?players[state.claimAwardOrder[1]]?.name:null;
+    state.lastResult={text:`${firstName} az első, 2 területet választhat.${secondName?' '+secondName+' a második, 1 területet választhat.':''} A többi játékos most nem kap területet.`,at:Date.now()};return state;
+   }
+   let text='';
+   if(mode==='claim'){
+    const answer=p.reveal.answers?.[attackerUid];if(answer?.correct&&territories[p.territoryIndex])territories[p.territoryIndex].owner=attackerUid;
+    text=answer?.correct?`${attacker?.name||'A játékos'} elfoglalta ${territories[p.territoryIndex]?.name||'a vármegyét'}.`:`${attacker?.name||'A játékos'} nem tudta elfoglalni ${territories[p.territoryIndex]?.name||'a vármegyét'}.`;
+    state.questionIndex=((Number(state.questionIndex)||0)+1)%Math.max(1,qs.length);
+    const free=territories.some(t=>!t.owner);
+    if(!free){state.stage='battle';state.battleTurnCount=0;state.turn=nextPlayerWithLand(order,0,territories);text+=' Minden terület gazdára talált: kezdődik a csatafázis!';}
+    else{const idx=order.indexOf(attackerUid);const alreadyOwns=territories.some(t=>t.owner===attackerUid);state.turn=alreadyOwns?order[(idx+1+order.length)%order.length]:attackerUid;}
+   }else{
+    const won=!!p.reveal.attackerWon;if(won&&territories[p.territoryIndex])territories[p.territoryIndex].owner=attackerUid;
+    text=won?`${attacker?.name||'A támadó'} megnyerte a csatát, elfoglalta ${territories[p.territoryIndex]?.name||'a vármegyét'} ${players[defenderUid]?.name||'a védő'} játékostól.`:`${players[defenderUid]?.name||'A védő'} megnyerte a csatát és megvédte ${territories[p.territoryIndex]?.name||'a vármegyét'}.`;
+    state.battleTurnCount=(Number(state.battleTurnCount)||0)+1;state.questionIndex=((Number(state.questionIndex)||0)+1)%Math.max(1,qs.length);
+    const alive=[...new Set(territories.map(t=>t.owner).filter(Boolean))];const idx=order.indexOf(attackerUid);state.turn=nextPlayerWithLand(order,(idx+1)%order.length,territories);
+    const maxTurns=(Number(state.battleRounds)||5)*order.length;
+    if(alive.length<=1||state.battleTurnCount>=maxTurns){state.phase='finished';text+=alive.length<=1?' A többi játékos területei elfogytak.':' Lezárult az összes csatakör.';}
+   }
+   state.territories=territories;state.round=(Number(state.round)||0)+1;state.lastResult={text,by:attackerUid,correct:!!p.reveal.answers?.[attackerUid]?.correct,at:Date.now()};state.pendingQuestion=null;return state;
+  });
+  selectedTerritory=null;renderedPendingSignature='';
  }catch(e){console.error('Kör lezárási hiba:',e);}
 }
 function renderFinished(){
@@ -280,7 +394,7 @@ function renderFinished(){
 }
 async function leave(){if(unsubscribe){unsubscribe();unsubscribe=null;}clearQuestionTimer();clearFinalizeTimer();clearTimeoutMonitor();roomId=null;roomData=null;selectedTerritory=null;show('home');}
 $('showCreate').onclick=()=>show('create');$('showJoin').onclick=()=>show('join');document.querySelectorAll('[data-home]').forEach(b=>b.onclick=()=>show('home'));$('createRoom').onclick=createRoom;$('joinRoom').onclick=joinRoom;$('startGame').onclick=startGame;$('leaveRoom').onclick=leave;$('gameLeave').onclick=leave;
-$('backToLobby').onclick=async()=>{if(uid===hostUid&&roomId)await update(ref(db,'rooms/'+roomId),{phase:'lobby',stage:'claim',pendingQuestion:null,lastResult:null,territories:(roomData.territories||[]).map(t=>({...t,owner:null})),turn:hostUid,round:0,questionIndex:0,battleTurnCount:0});};
+$('backToLobby').onclick=async()=>{if(uid===hostUid&&roomId)await update(ref(db,'rooms/'+roomId),{phase:'lobby',stage:'claimQuiz',pendingQuestion:null,lastResult:null,territories:(roomData.territories||[]).map(t=>({...t,owner:null})),turn:hostUid,round:0,questionIndex:0,claimRound:1,claimRanking:[],claimAwardOrder:[],claimPicksAllowed:{},claimPicksMade:{},battleTurnCount:0});};
 async function copyRoomCode(targetId){if(!roomId)return;try{await navigator.clipboard.writeText(roomId);$(targetId).textContent='Másolva ✓';setTimeout(()=>$(targetId).textContent=roomId+' ⧉',1400);}catch{$(targetId).textContent=roomId;}}
 $('copyCode').onclick=()=>copyRoomCode('copyCode');$('copyHeaderCode').onclick=()=>copyRoomCode('copyHeaderCode');
 $('roomCode').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''));
