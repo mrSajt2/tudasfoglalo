@@ -5,9 +5,9 @@
 export const firebaseConfig = {
   apiKey: "AIzaSyDx93ilYxWdGEISl6ORxWiG1lwAnc095SE",
   authDomain: "tudasfoglalo.firebaseapp.com",
+  databaseURL: "https://tudasfoglalo-default-rtdb.europe-west1.firebasedatabase.app",
   projectId: "tudasfoglalo",
   storageBucket: "tudasfoglalo.firebasestorage.app",
   messagingSenderId: "663561784908",
-  appId: "1:663561784908:web:7a714127ab6ebb19de2ee9",
-  measurementId: "G-N2XNQC7KPQ"
+  appId: "1:663561784908:web:7a714127ab6ebb19de2ee9"
 };
