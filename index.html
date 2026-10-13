@@ -30,6 +30,11 @@
   <button class="back" data-home>← Vissza</button><h2>Új szoba</h2>
   <label for="hostName">Játékosneved</label><input id="hostName" maxlength="18" placeholder="Pl. Gábor" autocomplete="nickname">
   <label for="roomTitle">Tantárgy / játék neve</label><input id="roomTitle" maxlength="40" placeholder="Pl. Szociológiai kutatásmódszertan">
+  <div class="create-options-grid">
+    <div><label for="questionTimeSelect">Válaszidő kérdésenként</label><select id="questionTimeSelect"><option value="10">10 másodperc</option><option value="15">15 másodperc</option><option value="20" selected>20 másodperc</option><option value="30">30 másodperc</option><option value="45">45 másodperc</option><option value="60">60 másodperc</option></select></div>
+    <div><label for="battleRoundsSelect">Csatakörök száma</label><select id="battleRoundsSelect"><option value="3">3 kör – gyors</option><option value="5" selected>5 kör – normál</option><option value="8">8 kör – hosszú</option><option value="10">10 kör – stratégiai</option></select></div>
+  </div>
+  <p class="small muted create-help">Először minden vármegye gazdára talál. Utána indul a csata: a támadó és a védő külön kérdést kap. A megadott csatakörök száma játékosonként értendő.</p>
   <label class="file-label" for="csvFile">Kérdések importálása (.csv)</label><input id="csvFile" type="file" accept=".csv,text/csv">
   <div id="fileInfo" class="file-info">Nincs fájl kiválasztva. Beépített mintakérdésekkel is kipróbálhatod.</div>
   <button id="createRoom" class="primary full">Szoba létrehozása</button><p id="createError" class="error"></p>
@@ -40,7 +45,7 @@
 </section>
 <section id="lobby" class="panel hidden">
   <button id="leaveRoom" class="back">← Kilépés</button><div class="lobby-heading"><div><div class="eyebrow">CSAK A MEGHÍVOTTAKNAK</div><h2 id="lobbyTitle">Játékszoba</h2></div><div class="room-code-wrap"><span>Szobakód</span><button id="copyCode" class="room-code">------ ⧉</button></div></div>
-  <p class="muted small">Küldd el a kódot a szaktársaidnak!</p><h3>Játékosok <span id="playerCount"></span></h3><div id="players" class="players"></div><div id="hostControls"><label for="winTarget">Győzelemhez szükséges területek</label><select id="winTarget"><option value="4">4 terület – gyors</option><option value="7" selected>7 terület – normál</option><option value="10">10 terület – hosszú</option></select><button id="startGame" class="primary full">Játék indítása</button></div><p id="lobbyWait" class="muted small"></p><p id="lobbyError" class="error"></p>
+  <p class="muted small">Küldd el a kódot a szaktársaidnak!</p><h3>Játékosok <span id="playerCount"></span></h3><div id="players" class="players"></div><div id="hostControls"><div id="lobbyRulesSummary" class="lobby-rules-summary"></div><button id="startGame" class="primary full">Játék indítása</button></div><p id="lobbyWait" class="muted small"></p><p id="lobbyError" class="error"></p>
 </section>
 <section id="game" class="panel game-screen hidden">
   <div class="game-board">
@@ -54,17 +59,17 @@
       <div class="map-toolbar"><div><div class="eyebrow" id="gameSubject">TANULÓS JÁTÉK</div><h2>Magyarország vármegyéi</h2><p>Az ország a tiéd lehet — egy jó válasszal kezdődik.</p></div><div id="turnBanner" class="turn-banner">A kör betöltése…</div></div>
       <div id="map" class="map map-hungary"></div><div class="zoom-controls" aria-label="Térkép nagyítása"><button id="mapZoomIn" type="button" aria-label="Nagyítás">+</button><button id="mapZoomOut" type="button" aria-label="Kicsinyítés">−</button></div>
     </section>
-    <section class="question-dock"><div id="questionArea" class="question-area"><div class="question-empty"><div class="empty-icon">⌖</div><div><strong>Válassz egy vármegyét!</strong><p>Koppints egy szabad területre a térképen, majd válaszolj a kérdésre.</p></div></div></div></section>
+    <section class="question-dock"><div id="questionArea" class="question-area"><div class="question-empty"><div class="empty-icon">⌖</div><div><strong>Válassz egy vármegyét!</strong><p>Először foglaljátok el a szabad vármegyéket, utána kezdődnek a csaták.</p></div></div></div></section>
   </div>
   <div id="gameStatus" class="game-status small muted"></div>
 </section>
-<section id="finished" class="panel hidden"><div class="winner-icon">🏆</div><div class="eyebrow">A JÁTÉK VÉGET ÉRT</div><h2 id="winnerTitle">Győztes!</h2><div id="finalScores" class="scoreboard"></div><button id="backToLobby" class="primary full">Vissza a szobába</button></section>
+<section id="finished" class="panel hidden"><div class="winner-icon">🏆</div><div class="eyebrow">A JÁTÉK VÉGET ÉRT</div><h2 id="winnerTitle">Győztes!</h2><p id="finishedSummary" class="muted"></p><div id="finalScores" class="scoreboard"></div><button id="showFinishedQuestions" class="secondary full" type="button">Kérdések és helyes válaszok</button><button id="backToLobby" class="primary full">Vissza a szobába</button></section>
 </main><div id="gameSettingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-  <div class="modal-backdrop" data-close-modal></div><div class="modal-card"><button class="modal-close" data-close-modal aria-label="Bezárás">×</button><div class="eyebrow">JÁTÉKBEÁLLÍTÁSOK</div><h2 id="settingsTitle">Szobabeállítások</h2><label for="settingsTarget">Győzelemhez szükséges területek</label><select id="settingsTarget"><option value="4">4 terület – gyors</option><option value="7">7 terület – normál</option><option value="10">10 terület – hosszú</option><option value="12">12 terület – stratégiai</option></select><p id="settingsPermission" class="muted small"></p><button id="saveSettings" class="primary full" type="button">Beállítások mentése</button></div>
+  <div class="modal-backdrop" data-close-modal></div><div class="modal-card"><button class="modal-close" data-close-modal aria-label="Bezárás">×</button><div class="eyebrow">JÁTÉKBEÁLLÍTÁSOK</div><h2 id="settingsTitle">Szobabeállítások</h2><div class="settings-summary" id="settingsSummary"></div><p id="settingsPermission" class="muted small"></p><button id="saveSettings" class="primary full" type="button">Kész</button></div>
 </div>
 <div id="gameQuestionsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="questionsModalTitle">
-  <div class="modal-backdrop" data-close-modal></div><div class="modal-card modal-card-wide"><button class="modal-close" data-close-modal aria-label="Bezárás">×</button><div class="eyebrow">KÉRDÉSBANK</div><h2 id="questionsModalTitle">Kérdések</h2><p class="muted small">A szobába importált kérdések. A helyes válaszokat itt nem jelenítjük meg.</p><ol id="questionBankList" class="question-bank-list"></ol><button class="secondary full" type="button" data-close-modal>Bezárás</button></div>
+  <div class="modal-backdrop" data-close-modal></div><div class="modal-card modal-card-wide"><button class="modal-close" data-close-modal aria-label="Bezárás">×</button><div class="eyebrow">KÉRDÉSBANK</div><h2 id="questionsModalTitle">Kérdések</h2><p id="questionsModalDescription" class="muted small">A szobába importált kérdések.</p><ol id="questionBankList" class="question-bank-list"></ol><button class="secondary full" type="button" data-close-modal>Bezárás</button></div>
 </div>
 <footer>Tanulásból terület. Területből győzelem.</footer>
-<script type="module" src="app.js?v=5"></script>
+<script type="module" src="app.js?v=6"></script>
 </body></html>

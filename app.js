@@ -29,6 +29,7 @@ const countyDefs=[
  {"name":"Baranya","lines":["Baranya"],"x":302,"y":541,"fontSize":18,"d":"M 392,542 L 391,540 L 380,542 L 374,538 L 374,534 L 380,525 L 368,521 L 361,511 L 356,510 L 346,500 L 347,493 L 343,488 L 342,492 L 327,504 L 322,502 L 330,489 L 324,486 L 326,476 L 320,472 L 317,463 L 301,466 L 303,476 L 295,483 L 290,483 L 293,486 L 290,490 L 286,486 L 267,485 L 264,499 L 251,504 L 243,502 L 241,505 L 237,505 L 235,500 L 229,515 L 229,528 L 222,536 L 225,542 L 222,551 L 236,565 L 235,572 L 233,574 L 227,573 L 226,576 L 229,575 L 238,581 L 248,582 L 252,588 L 272,585 L 276,589 L 285,591 L 288,587 L 295,589 L 301,587 L 311,594 L 319,594 L 324,590 L 330,597 L 333,597 L 333,594 L 336,591 L 338,592 L 341,586 L 345,588 L 355,581 L 367,561 L 378,564 L 385,569 L 386,563 L 384,560 L 389,557 L 388,552 Z"}
 ];
 const lands=countyDefs.map(c=>c.name);
+function shuffleQuestions(input){const arr=[...input];for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}return arr;}
 const sample=[
  {question:'Ki írta A szociológiai képzelet című művet?',options:['Émile Durkheim','C. Wright Mills','Max Weber','Auguste Comte'],correct:1},
  {question:'Mit jelent a dyád?',options:['Két személyből álló csoport','Három személyből álló csoport','Nagy társadalmi réteg','Intézmény'],correct:0},
@@ -50,19 +51,20 @@ async function createRoom(){
   if(!uid){err('createError','Még nincs aktív bejelentkezés. Várj pár másodpercet, majd próbáld újra.');return;}
   const name=$('hostName').value.trim(),title=$('roomTitle').value.trim()||'Tanulós játék';
   if(!name){err('createError','Add meg a játékosneved!');return;}
-  const questions=localQuestions;
-  if(!questions.length){err('createError','Nem találtam érvényes kérdéseket a CSV-ben.');return;}
+  if(!localQuestions.length){err('createError','Nem találtam érvényes kérdéseket a CSV-ben.');return;}
+  const questions=shuffleQuestions(localQuestions);
+  const questionTime=Math.max(10,Math.min(60,Number($('questionTimeSelect')?.value)||20));
+  const battleRounds=Math.max(3,Math.min(10,Number($('battleRoundsSelect')?.value)||5));
   const id=makeId();
   const player={[uid]:{name,joinedAt:Date.now(),color:colors[0],host:true}};
-  const state={title,hostUid:uid,players:player,questions,phase:'lobby',target:7,turn:uid,turnOrder:[uid],territories:lands.map(name=>({name,owner:null})),round:0,createdAt:serverTimestamp()};
+  const state={title,hostUid:uid,players:player,questions,phase:'lobby',stage:'claim',questionTime,battleRounds,turn:uid,turnOrder:[uid],territories:lands.map(name=>({name,owner:null})),round:0,questionIndex:0,battleTurnCount:0,createdAt:serverTimestamp()};
   button.disabled=true;button.textContent='Szoba létrehozása…';status('Szoba mentése…');
   try{
-    await withTimeout(set(ref(db,'rooms/'+id),state),15000,'Az adatbázis 15 másodpercen belül nem válaszolt. Ellenőrizd, hogy létrehoztad-e a Realtime Database-t, helyes-e a databaseURL, és engedélyezik-e az írást a Rules szabályok.');
+    await withTimeout(set(ref(db,'rooms/'+id),state),15000,'Az adatbázis 15 másodpercen belül nem válaszolt. Ellenőrizd a Realtime Database-t, a databaseURL-t és a Rules szabályokat.');
     roomId=id;hostUid=uid;watchRoom(id);show('lobby');
   }catch(e){
     console.error('Szobakészítési hiba:',e);
-    const code=e?.code?` (${e.code})`:'';
-    const detail=e?.message||'Ismeretlen hiba';
+    const code=e?.code?` (${e.code})`:'';const detail=e?.message||'Ismeretlen hiba';
     if(/permission_denied|PERMISSION_DENIED/i.test(detail+' '+code))err('createError','A Firebase elutasította az adatbázisba írást. Ellenőrizd a Realtime Database Rules beállítását.');
     else err('createError','Nem sikerült létrehozni a szobát: '+detail+code);
     status(databaseConnected?'Online · csatlakozva':'Adatbázis-kapcsolati hiba');
@@ -70,29 +72,49 @@ async function createRoom(){
 }
 async function joinRoom(){err('joinError','');if(!uid){err('joinError','Az online funkciókhoz Firebase-beállítás szükséges.');return;}const name=$('joinName').value.trim(),id=$('roomCode').value.trim().toUpperCase();if(!name||id.length<4){err('joinError','Add meg a nevedet és a szobakódot!');return;}try{const snap=await get(ref(db,'rooms/'+id));if(!snap.exists()){err('joinError','Nem található ilyen szoba. Ellenőrizd a kódot.');return;}const data=snap.val();if(data.phase!=='lobby'){err('joinError','Ez a játék már elkezdődött.');return;}if(Object.keys(data.players||{}).length>=6){err('joinError','A szoba megtelt (maximum 6 játékos).');return;}const used=Object.keys(data.players||{}).length;await update(ref(db,'rooms/'+id+'/players'),{[uid]:{name,joinedAt:Date.now(),color:colors[used%colors.length],host:false}});await update(ref(db,'rooms/'+id),{turnOrder:[...Object.keys(data.players||{}),uid]});roomId=id;hostUid=data.hostUid;watchRoom(id);show('lobby');}catch(e){err('joinError','Nem sikerült csatlakozni: '+e.message);}}
 function watchRoom(id){if(unsubscribe)unsubscribe();unsubscribe=onValue(ref(db,'rooms/'+id),snap=>{if(!snap.exists()){status('A szoba megszűnt');show('home');return;}roomData=snap.val();hostUid=roomData.hostUid;renderRoom();if(roomData.phase==='playing')show('game');else if(roomData.phase==='finished')show('finished');else show('lobby');},e=>{status('Kapcsolódási hiba');console.error(e);});}
-function renderRoom(){if(!roomData)return;const players=roomData.players||{};const list=Object.entries(players);$('lobbyTitle').textContent=roomData.title||'Tanulós játék';$('copyCode').textContent=roomId+' ⧉';$('playerCount').textContent='('+list.length+')';$('headerRoomCode').textContent=roomId||'—';$('headerRoomMeta').textContent=`Játékosok: ${list.length}/6 · Kérdések: ${(roomData.questions||sample).length}`;$('players').innerHTML=list.map(([id,p])=>`<div class="player-row"><div class="avatar" style="background:${esc(p.color||colors[0])};color:#101a33">${esc((p.name||'?')[0].toUpperCase())}</div><b>${esc(p.name)}</b><span class="spacer"></span>${id===hostUid?'<span class="host-tag">JÁTÉKMESTER</span>':''}</div>`).join('');$('hostControls').classList.toggle('hidden',uid!==hostUid);$('lobbyWait').textContent=uid===hostUid?'Ha mindenki csatlakozott, indítsd el a játékot.':'Várj, amíg a játékmester elindítja a játékot.';if(roomData.phase==='playing')renderGame();if(roomData.phase==='finished')renderFinished();}
-async function startGame(){if(uid!==hostUid||!roomData)return;const order=Object.keys(roomData.players||{});if(order.length<2){err('lobbyError','Legalább 2 játékos szükséges.');return;}const target=Number($('winTarget').value);await update(ref(db,'rooms/'+roomId),{phase:'playing',target,turnOrder:order,turn:order[0],round:0,questionIndex:0,lastResult:null,territories:roomData.territories.map(t=>({...t,owner:null}))});}
-function currentQuestion(){const qs=roomData.questions||sample;return qs[(roomData.questionIndex||0)%qs.length];}
+function renderRoom(){
+ if(!roomData)return;const players=roomData.players||{},list=Object.entries(players);
+ $('lobbyTitle').textContent=roomData.title||'Tanulós játék';$('copyCode').textContent=roomId+' ⧉';$('playerCount').textContent='('+list.length+')';
+ $('headerRoomCode').textContent=roomId||'—';$('headerRoomMeta').textContent=`Játékosok: ${list.length}/6 · Kérdések: ${(roomData.questions||sample).length}`;
+ $('players').innerHTML=list.map(([id,p])=>`<div class="player-row"><div class="avatar" style="background:${esc(p.color||colors[0])};color:#101a33">${esc((p.name||'?')[0].toUpperCase())}</div><b>${esc(p.name)}</b><span class="spacer"></span>${id===hostUid?'<span class="host-tag">JÁTÉKMESTER</span>':''}</div>`).join('');
+ $('hostControls').classList.toggle('hidden',uid!==hostUid);
+ if($('lobbyRulesSummary'))$('lobbyRulesSummary').innerHTML=`<b>Játékszabályok</b><span>${Number(roomData.questionTime)||20} mp válaszidő kérdésenként</span><span>${Number(roomData.battleRounds)||5} csatakör játékosonként</span><span>Véletlenszerű kérdéssorrend · 20 terület</span>`;
+ $('lobbyWait').textContent=uid===hostUid?'Ha mindenki csatlakozott, indítsd el a játékot.':'Várj, amíg a játékmester elindítja a játékot.';
+ if(roomData.phase==='playing')renderGame();if(roomData.phase==='finished')renderFinished();
+}
+async function startGame(){
+ if(uid!==hostUid||!roomData)return;
+ const order=Object.keys(roomData.players||{});
+ if(order.length<2){err('lobbyError','Legalább 2 játékos szükséges.');return;}
+ clearQuestionTimer();
+ const territories=(roomData.territories||lands.map(name=>({name,owner:null}))).map(t=>({...t,owner:null}));
+ await update(ref(db,'rooms/'+roomId),{phase:'playing',stage:'claim',turnOrder:order,turn:order[0],round:0,questionIndex:0,battleTurnCount:0,pendingQuestion:null,lastResult:{text:'Területfoglalás: foglaljátok el mind a 20 vármegyét és Budapestet!',at:Date.now()},territories});
+}
+function currentQuestion(){const qs=roomData?.questions||sample;return qs[(roomData?.questionIndex||0)%qs.length];}
+function nextPlayerWithLand(order,startIndex,territories){
+ for(let step=0;step<order.length;step++){const id=order[(startIndex+step+order.length)%order.length];if((territories||[]).some(t=>t.owner===id))return id;}
+ return order[(startIndex+order.length)%order.length]||order[0];
+}
 function renderGame(){
  if(!roomData)return;
  const players=roomData.players||{},order=roomData.turnOrder||Object.keys(players),turn=roomData.turn,active=players[turn];
- const territories=roomData.territories||[],isCurrent=turn===uid&&roomData.phase==='playing';
- const questions=roomData.questions||sample;
- $('gameSubject').textContent=roomData.title||'TANULÓS JÁTÉK';
- $('headerRoomCode').textContent=roomId||'—';
+ const territories=roomData.territories||[],isCurrent=turn===uid&&roomData.phase==='playing',questions=roomData.questions||sample;
+ const stage=roomData.stage||'claim';
+ $('gameSubject').textContent=roomData.title||'TANULÓS JÁTÉK';$('headerRoomCode').textContent=roomId||'—';
  $('headerRoomMeta').textContent=`Játékosok: ${Object.keys(players).length}/6 · Kérdések: ${questions.length}`;
- $('turnBanner').textContent=turn===uid?'A te köröd · Válassz egy szabad vármegyét':`${active?.name||'Egy játékos'} következik`;
+ const freeCount=territories.filter(t=>!t.owner).length;
+ if(stage==='claim')$('turnBanner').textContent=turn===uid?'A te köröd · Válassz egy szabad vármegyét':`${active?.name||'Egy játékos'} foglal területet`;
+ else $('turnBanner').textContent=turn===uid?'A te köröd · Válassz ellenfél-vármegyét':`${active?.name||'Egy játékos'} támad`;
  $('gamePlayerCount').textContent=`${Object.keys(players).length} játékos`;
  const ranked=order.map(id=>{const p=players[id]||{};return {id,p,n:territories.filter(t=>t.owner===id).length};}).sort((a,b)=>b.n-a.n);
  $('scoreboard').innerHTML=ranked.map(({id,p,n},i)=>`<div class="rank-card ${id===turn?'active':''}" style="--player-color:${esc(p.color||colors[0])}"><div class="rank-number">${i+1}</div><div class="rank-info"><strong>${esc(p.name||'Játékos')}</strong><span>${n} ${n===1?'terület':'terület'}</span></div>${i===0?'<span class="leader-crown" aria-label="Élen áll">♛</span>':''}</div>`).join('');
- const pending=roomData.pendingQuestion;
- const selectedIndex=selectedTerritory??pending?.territoryIndex;
+ const pending=roomData.pendingQuestion;const selectedIndex=selectedTerritory??pending?.territoryIndex;
  const areas=countyDefs.map((county,i)=>{
    const t=territories[i]; if(!t)return '';
    const owner=t.owner?players[t.owner]:null;
-   const locked=!isCurrent||!!t.owner||!!pending;
+   const stage=roomData.stage||'claim'; const locked=!isCurrent||!!pending||(stage==='claim'?!!t.owner:(!t.owner||t.owner===uid));
    const selected=selectedIndex===i;
-   const classes=['county',owner?'owned':'free',locked?'locked':'',selected?'selected':'',county.name==='Budapest'?'capital':''].filter(Boolean).join(' ');
+   const attackable=(roomData.stage||'claim')==='battle'&&!!owner&&t.owner!==uid; const classes=['county',owner?'owned':'free',locked?'locked':'',selected?'selected':'',attackable?'attackable':'',county.name==='Budapest'?'capital':''].filter(Boolean).join(' ');
    const lineHeight=county.lines.length>1?22:0;
    const label=county.lines.map((line,n)=>{const y=county.y+(n-(county.lines.length-1)/2)*lineHeight;return `<tspan x="${county.x}" y="${y}">${esc(line)}</tspan>`;}).join('');
    const ownerText=owner?` — ${esc(owner.name)}`:' — szabad terület';
@@ -105,76 +127,167 @@ function renderGame(){
    g.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&!g.classList.contains('locked')){e.preventDefault();choose();}});
  });
  const last=roomData.lastResult;
- $('gameStatus').textContent=last?(last.text||''):`Győzelmi cél: ${roomData.target} vármegye · ${Object.keys(players).length} játékos`;
- if(pending){
-   if(pending.forUid===uid)renderQuestion(pending);
-   else renderSpectatorQuestion(pending,players[pending.forUid]?.name||'A soron lévő játékos');
- }else if(turn!==uid){
-   clearQuestionTimer();
-   $('questionArea').innerHTML=`<div class="question-empty"><div class="empty-icon">⌁</div><div><strong>${esc(active?.name||'A következő játékos')} következik</strong><p>Várj, amíg kiválaszt egy vármegyét és megválaszolja a kérdést.</p></div></div>`;
- }else if(selectedTerritory===null||selectedTerritory===undefined){
-   clearQuestionTimer();
-   $('questionArea').innerHTML='<div class="question-empty"><div class="empty-icon">⌖</div><div><strong>Válassz egy vármegyét!</strong><p>Koppints bármelyik narancssárga, szabad területre a térképen, majd válaszolj a kérdésre a meghódításához.</p></div></div>';
+ let statusText=stage==='claim'?`Területfoglalás · még ${freeCount} szabad terület`:`Csatafázis · ${Number(roomData.battleTurnCount)||0}/${(Number(roomData.battleRounds)||5)*order.length} támadókör`;
+ $('gameStatus').textContent=last?.text?`${last.text} · ${statusText}`:statusText;
+ if(!pending){
+   clearQuestionTimer();clearFinalizeTimer();clearTimeoutMonitor();renderedPendingSignature='';
+   if(stage==='claim')$('questionArea').innerHTML='<div class="question-empty"><div class="empty-icon">⌖</div><div><strong>Foglaljátok el a szabad területeket!</strong><p>A soron lévő játékos válasszon egy narancssárga vármegyét. Minden terület elfoglalása után elindul a csatafázis.</p></div></div>';
+   else if(turn!==uid)$('questionArea').innerHTML=`<div class="question-empty"><div class="empty-icon">⚔</div><div><strong>${esc(active?.name||'A következő játékos')} következik</strong><p>Várj, amíg megtámad egy ellenfél által birtokolt vármegyét.</p></div></div>`;
+   else $('questionArea').innerHTML='<div class="question-empty"><div class="empty-icon">⚔</div><div><strong>Támadj meg egy ellenfelet!</strong><p>Válassz egy másik játékos által birtokolt vármegyét. A támadó és a védő ugyanazt a kérdést kapja.</p></div></div>';
+   return;
  }
+ if(pending.reveal){
+   const q=pending.questionsByUid?.[uid]||pending.question||pending.questionsByUid?.[pending.attackerUid];
+   if(q)renderRevealQuestion(pending,q);else renderSpectatorQuestion(pending,players);
+   scheduleFinalizePending(pending);
+   return;
+ }
+ clearFinalizeTimer();
+ if(pending.mode==='claim'){
+   if(uid===pending.attackerUid){renderQuestion(pending,pending.questionsByUid?.[uid]||pending.question);}
+   else renderSpectatorQuestion(pending,players);
+ }else if(uid===pending.attackerUid||uid===pending.defenderUid){
+   const q=pending.questionsByUid?.[uid];const already=!!pending.answers?.[uid];
+   if(already)renderAnsweredWaiting(pending,q,players);else renderQuestion(pending,q);
+ }else renderSpectatorQuestion(pending,players);
 }
+
 async function selectTerritory(i){
- if(!roomData||roomData.turn!==uid||roomData.territories[i]?.owner||roomData.pendingQuestion)return;
- selectedTerritory=i;
- const qs=roomData.questions||sample,q=qs[(roomData.questionIndex||0)%qs.length];
- const pending={forUid:uid,territoryIndex:i,question:q,questionIndex:roomData.questionIndex||0,startedAt:Date.now()};
+ if(!roomData||roomData.turn!==uid||roomData.pendingQuestion||roomData.phase!=='playing')return;
+ const territories=roomData.territories||[],territory=territories[i],stage=roomData.stage||'claim';
+ if(!territory)return;
+ if(stage==='claim'&&territory.owner)return;
+ if(stage==='battle'&&(!territory.owner||territory.owner===uid))return;
+ const qs=roomData.questions||sample;if(!qs.length)return;
+ const qi=Number(roomData.questionIndex)||0,attackerUid=uid,defenderUid=stage==='battle'?territory.owner:null;
+ const question=qs[qi%qs.length];
+ const questionsByUid=defenderUid?{[attackerUid]:question,[defenderUid]:question}:{[attackerUid]:question};
+ const pending={id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`,mode:stage,attackerUid,defenderUid,territoryIndex:i,territoryName:territory.name,questionIndex:qi,questionsByUid,question,startedAt:Date.now(),answers:{},reveal:null};
+ selectedTerritory=i;renderedPendingSignature='';
  try{await update(ref(db,'rooms/'+roomId),{pendingQuestion:pending});}
  catch(e){console.error(e);selectedTerritory=null;$('questionArea').innerHTML='<p class="error">Nem sikerült elindítani a kérdést. Ellenőrizd a Firebase-jogosultságokat, majd próbáld újra.</p>';}
 }
-let questionTimerInterval=null,questionSecondsLeft=20,pickedAnswer=null,activePending=null;
+let questionTimerInterval=null,questionSecondsLeft=20,questionSecondsMax=20,pickedAnswer=null,activePending=null,renderedPendingSignature='',finalizeTimer=null,finalizeTimerId=null,timeoutMonitor=null,timeoutMonitorId=null;
 function clearQuestionTimer(){if(questionTimerInterval){clearInterval(questionTimerInterval);questionTimerInterval=null;}}
-function updateTimerUI(){const text=$('questionTimer');if(text)text.textContent=String(questionSecondsLeft);const ring=$('questionTimerRing');if(ring)ring.style.setProperty('--timer-angle',`${Math.max(0,questionSecondsLeft)/20*360}deg`);}
-function startQuestionTimer(pending){clearQuestionTimer();const startedAt=Number(pending.startedAt)||Date.now();const elapsed=Math.max(0,Math.floor((Date.now()-startedAt)/1000));questionSecondsLeft=Math.max(0,20-elapsed);updateTimerUI();if(questionSecondsLeft<=0){Promise.resolve().then(()=>submitAnswer(-1,pending));return;}questionTimerInterval=setInterval(()=>{questionSecondsLeft=Math.max(0,questionSecondsLeft-1);updateTimerUI();if(questionSecondsLeft<=0){clearQuestionTimer();submitAnswer(-1,pending);}},1000);}
-function answerOptionsHtml(q){return q.options.map((o,i)=>`<button class="option" data-answer="${i}" type="button"><span class="option-letter">${'ABCD'[i]}</span><span class="option-text">${esc(o)}</span></button>`).join('');}
-function renderQuestion(pending){
- if(!pending?.question)return;
- clearQuestionTimer();activePending=pending;pickedAnswer=null;
- const q=pending.question,qs=roomData.questions||sample;
- $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip"><span class="subject-icon">▣</span>${esc(roomData.title||'Tanulós játék')}</span><span class="question-progress">${(pending.questionIndex??0)+1} / ${qs.length}</span></div><div class="quiz-grid"><div class="quiz-main"><div class="eyebrow">${esc(roomData.territories[pending.territoryIndex]?.name||'VÁRMEGYE')} · TERÜLETSZERZŐ KÉRDÉS</div><h3>${esc(q.question)}</h3><div class="options">${answerOptionsHtml(q)}</div><div id="answerResult" class="result" aria-live="polite"></div></div><aside class="quiz-side"><div class="timer-ring" id="questionTimerRing"><span id="questionTimer">20</span></div><div class="timer-caption">másodperc</div><button id="submitAnswer" class="primary submit-answer" type="button" disabled>Válasz küldése</button></aside></div>`;
- document.querySelectorAll('[data-answer]').forEach(b=>b.addEventListener('click',()=>{if(answerBusy)return;pickedAnswer=Number(b.dataset.answer);document.querySelectorAll('[data-answer]').forEach(x=>x.classList.toggle('chosen',x===b));$('submitAnswer').disabled=false;}));
- $('submitAnswer').addEventListener('click',()=>{if(pickedAnswer!==null)submitAnswer(pickedAnswer,pending);});
- startQuestionTimer(pending);
+function clearTimeoutMonitor(){if(timeoutMonitor){clearTimeout(timeoutMonitor);timeoutMonitor=null;}timeoutMonitorId=null;}
+function clearFinalizeTimer(){if(finalizeTimer){clearTimeout(finalizeTimer);finalizeTimer=null;}finalizeTimerId=null;}
+function updateTimerUI(){const text=$('questionTimer');if(text)text.textContent=String(questionSecondsLeft);const ring=$('questionTimerRing');if(ring)ring.style.setProperty('--timer-angle',`${Math.max(0,questionSecondsLeft)/Math.max(1,questionSecondsMax)*360}deg`);}
+function startQuestionTimer(pending){clearQuestionTimer();questionSecondsMax=Math.max(5,Number(roomData?.questionTime)||20);const startedAt=Number(pending.startedAt)||Date.now();const elapsed=Math.max(0,Math.floor((Date.now()-startedAt)/1000));questionSecondsLeft=Math.max(0,questionSecondsMax-elapsed);updateTimerUI();scheduleTimeoutMonitor(pending);if(questionSecondsLeft<=0){Promise.resolve().then(()=>submitAnswer(-1,pending));return;}questionTimerInterval=setInterval(()=>{questionSecondsLeft=Math.max(0,questionSecondsLeft-1);updateTimerUI();if(questionSecondsLeft<=0){clearQuestionTimer();submitAnswer(-1,pending);}},1000);}
+function scheduleTimeoutMonitor(pending){if(!pending?.id||timeoutMonitorId===pending.id)return;clearTimeoutMonitor();timeoutMonitorId=pending.id;const deadline=(Number(pending.startedAt)||Date.now())+(Math.max(5,Number(roomData?.questionTime)||20)*1000)+250;timeoutMonitor=setTimeout(async()=>{if(!roomId)return;try{await runTransaction(ref(db,'rooms/'+roomId),state=>{const p=state?.pendingQuestion;if(!state||state.phase!=='playing'||!p||p.id!==pending.id||p.reveal)return;const participants=p.mode==='battle'?[p.attackerUid,p.defenderUid]:[p.attackerUid];p.answers={...(p.answers||{})};for(const id of participants){if(id&&!p.answers[id])p.answers[id]={answer:-1,correct:false,answeredAt:Date.now(),timedOut:true};}if(participants.every(id=>id&&p.answers[id])){const a=p.answers[p.attackerUid],d=p.mode==='battle'?p.answers[p.defenderUid]:null;p.reveal={revealedAt:Date.now(),answers:p.answers,attackerWon:p.mode==='battle'&&!!a?.correct&&!d?.correct};}state.pendingQuestion=p;return state;});}catch(e){console.error('Kérdésidő lezárási hiba:',e);}},Math.max(0,deadline-Date.now()));}
+function answerOptionsHtml(q,answer=null,revealed=false){return (q?.options||[]).map((o,i)=>{const classes=['option',answer?.answer===i?'chosen':'',revealed&&i===q.correct?'correct':'',revealed&&answer&&answer.answer===i&&i!==q.correct?'wrong':''].filter(Boolean).join(' ');return `<button class="option ${classes}" data-answer="${i}" type="button"><span class="option-letter">${'ABCD'[i]}</span><span class="option-text">${esc(o)}</span></button>`;}).join('');}
+function resultLine(pending,uidForQuestion,players){
+ const r=pending.reveal;if(!r)return '';
+ if(pending.mode==='claim'){const a=r.answers?.[pending.attackerUid];return a?.correct?'Helyes válasz! A vármegye 5 másodperc múlva a tiéd lesz.':'A helyes válasz zölddel jelölve. A terület szabad marad.';}
+ const attacker=players?.[pending.attackerUid]?.name||'Támadó',defender=players?.[pending.defenderUid]?.name||'Védő';
+ return r.attackerWon?`${attacker} helyesen válaszolt, ${defender} hibázott — a terület gazdát cserél!`:`${defender} megvédte a területet. A vármegye a védőnél marad.`;
 }
-function renderSpectatorQuestion(pending,playerName){
- clearQuestionTimer();const q=pending.question;if(!q)return;
- $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip"><span class="subject-icon">▣</span>${esc(roomData.title||'Tanulós játék')}</span><span class="question-progress">${(pending.questionIndex??0)+1} / ${(roomData.questions||sample).length}</span></div><div class="quiz-grid"><div class="quiz-main"><div class="eyebrow">${esc(roomData.territories[pending.territoryIndex]?.name||'VÁRMEGYE')} · KÉRDÉS</div><h3>${esc(q.question)}</h3><div class="options spectator-options">${answerOptionsHtml(q)}</div><p class="spectator-note">${esc(playerName)} most válaszol…</p></div><aside class="quiz-side"><div class="timer-ring spectator-ring"><span>?</span></div><div class="timer-caption">a soron lévő játékos</div></aside></div>`;
- document.querySelectorAll('.spectator-options [data-answer]').forEach(b=>{b.disabled=true;});
+function renderQuestion(pending,q){
+ if(!pending?.id||!q)return;
+ const answer=pending.answers?.[uid];
+ if(answer){renderAnsweredWaiting(pending,q,roomData.players||{});return;}
+ const signature=`${pending.id}:active`;if(signature===renderedPendingSignature)return;renderedPendingSignature=signature;clearQuestionTimer();activePending=pending;
+ const qs=roomData.questions||sample,mode=pending.mode||'claim';
+ pickedAnswer=null;
+ const label=mode==='battle'?`${uid===pending.attackerUid?'TÁMADÁS':'VÉDEKEZÉS'} · ${esc(pending.territoryName||roomData.territories[pending.territoryIndex]?.name||'VÁRMEGYE')}`:`TERÜLETFOGLALÁS · ${esc(pending.territoryName||roomData.territories[pending.territoryIndex]?.name||'VÁRMEGYE')}`;
+ const sub=mode==='battle'?(uid===pending.attackerUid?'Ugyanazt a kérdést kapod, mint a védő. Ha te helyesen, ő pedig hibásan válaszol, megszerzed a területet.':'Ugyanazt a kérdést kapod, mint a támadó. Ha helyesen válaszolsz, megvéded a területet.'):'Válaszolj helyesen a terület elfoglalásához.';
+ $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip"><span class="subject-icon">▣</span>${esc(roomData.title||'Tanulós játék')}</span><span class="question-progress">${(pending.questionIndex??0)+1} / ${qs.length}</span></div><div class="quiz-grid"><div class="quiz-main"><div class="eyebrow">${label}</div><h3>${esc(q.question)}</h3><div class="options">${answerOptionsHtml(q)}</div><div class="result muted">${sub}</div></div><aside class="quiz-side"><div class="timer-ring" id="questionTimerRing"><span id="questionTimer">${Number(roomData.questionTime)||20}</span></div><div class="timer-caption">másodperc maradt</div><button id="submitAnswer" class="primary submit-answer" type="button" disabled>Válasz küldése</button></aside></div>`;
+ document.querySelectorAll('#questionArea [data-answer]').forEach(b=>b.addEventListener('click',()=>{if(answerBusy||roomData.pendingQuestion?.answers?.[uid])return;pickedAnswer=Number(b.dataset.answer);document.querySelectorAll('#questionArea [data-answer]').forEach(x=>x.classList.toggle('chosen',x===b));$('submitAnswer').disabled=false;}));
+ $('submitAnswer').addEventListener('click',()=>{if(pickedAnswer!==null)submitAnswer(pickedAnswer,pending);});startQuestionTimer(pending);
+}
+function renderAnsweredWaiting(pending,q,players){
+ if(!pending?.id||!q)return;clearQuestionTimer();scheduleTimeoutMonitor(pending);const signature=`${pending.id}:answered`;if(signature===renderedPendingSignature)return;renderedPendingSignature=signature;
+ const opponentId=uid===pending.attackerUid?pending.defenderUid:pending.attackerUid;const opponentName=players?.[opponentId]?.name||'ellenfél';
+ $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">⚔ ${pending.mode==='battle'?'Csata folyamatban':'Területfoglalás'}</span><span class="question-progress">${(pending.questionIndex??0)+1} / ${(roomData.questions||sample).length}</span></div><div class="answered-wait"><div class="answered-check">✓</div><div><h3>A válaszodat rögzítettük.</h3><p>Várunk, amíg ${esc(opponentName)} is válaszol. Ezután 5 másodpercig megjelenik a helyes válasz.</p></div></div>`;
+}
+function renderSpectatorQuestion(pending,players){
+ clearQuestionTimer();if(!pending.reveal)scheduleTimeoutMonitor(pending);const signature=`${pending.id}:spectator:${pending.reveal?'reveal':'waiting'}`;if(signature===renderedPendingSignature)return;renderedPendingSignature=signature;
+ const attacker=players?.[pending.attackerUid]?.name||'A támadó',defender=players?.[pending.defenderUid]?.name||'A védő';
+ if(pending.mode==='battle')$('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">⚔ Csata</span><span class="question-progress">${(pending.questionIndex??0)+1} / ${(roomData.questions||sample).length}</span></div><div class="question-empty"><div class="empty-icon">⚔</div><div><strong>${esc(attacker)} vs. ${esc(defender)}</strong><p>${esc(pending.territoryName||'A kiválasztott vármegye')} a tét. Mindkét játékos ugyanarra a kérdésre és ugyanazokra a válaszlehetőségekre válaszol. Az eredményt a párbaj végén látjátok.</p></div></div>`;
+ else $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">Területfoglalás</span></div><div class="question-empty"><div class="empty-icon">⌖</div><div><strong>${esc(attacker)} próbál területet foglalni</strong><p>A kérdés és a helyes válasz az aktív játékosnak jelenik meg.</p></div></div>`;
+}
+function renderRevealQuestion(pending,q){
+ if(!pending?.id||!q)return;clearQuestionTimer();const ans=pending.reveal?.answers?.[uid]||null;const signature=`${pending.id}:reveal:${uid}`;if(signature===renderedPendingSignature)return;renderedPendingSignature=signature;
+ const mode=pending.mode||'claim',players=roomData.players||{};const label=mode==='battle'?`CSATA · ${esc(pending.territoryName||'VÁRMEGYE')}`:`TERÜLETFOGLALÁS · ${esc(pending.territoryName||'VÁRMEGYE')}`;
+ let result=resultLine(pending,uid,players);
+ if(mode==='battle'){const r=pending.reveal;const a=r.answers?.[pending.attackerUid],d=r.answers?.[pending.defenderUid];result=`${result}<br>${esc(players[pending.attackerUid]?.name||'Támadó')}: ${a?.correct?'helyes':'hibás'} · ${esc(players[pending.defenderUid]?.name||'Védő')}: ${d?.correct?'helyes':'hibás'}`;}
+ const countdown=Math.max(0,5-Math.floor((Date.now()-(Number(pending.reveal.revealedAt)||Date.now()))/1000));
+ $('questionArea').innerHTML=`<div class="question-panel-heading"><span class="subject-chip">${mode==='battle'?'⚔ Csata eredménye':'✓ Helyes válasz'}</span><span class="question-progress">Következő lépés: ${countdown} mp</span></div><div class="quiz-grid"><div class="quiz-main"><div class="eyebrow">${label} · HELYES VÁLASZ ZÖLDDEL</div><h3>${esc(q.question)}</h3><div class="options">${answerOptionsHtml(q,ans,true)}</div><div class="result ${pending.reveal.attackerWon?'success-result':mode==='claim'&&pending.reveal.answers?.[pending.attackerUid]?.correct?'success-result':'error-result'}">${result}</div></div><aside class="quiz-side"><div class="timer-ring reveal-ring"><span>${countdown}</span></div><div class="timer-caption">másodperc az eredményig</div><div class="reveal-hint">A helyes válasz zölddel jelölve</div></aside></div>`;
+ document.querySelectorAll('#questionArea [data-answer]').forEach(b=>b.disabled=true);startRevealCountdown(pending);
+}
+function startRevealCountdown(pending){
+ clearQuestionTimer();const revealedAt=Number(pending.reveal?.revealedAt)||Date.now();
+ const tick=()=>{const left=Math.max(0,5-Math.floor((Date.now()-revealedAt)/1000));const progress=document.querySelector('#questionArea .question-progress');if(progress)progress.textContent=`Következő lépés: ${left} mp`;const ring=$('questionTimerRing');if(ring)ring.style.setProperty('--timer-angle',`${left/5*360}deg`);const number=ring?.querySelector('span');if(number)number.textContent=String(left);if(left<=0)clearQuestionTimer();};
+ tick();if(Date.now()<revealedAt+5000)questionTimerInterval=setInterval(tick,200);
 }
 async function submitAnswer(answer,pending){
- if(answerBusy)return;answerBusy=true;clearQuestionTimer();
- const correct=answer===pending.question.correct;
- document.querySelectorAll('[data-answer]').forEach(b=>{b.disabled=true;const n=Number(b.dataset.answer);if(n===pending.question.correct)b.classList.add('correct');else if(answer>=0&&n===answer)b.classList.add('wrong');});
- const result=$('answerResult');if(result){result.className='result '+(answer<0?'timeout-result':correct?'success-result':'error-result');result.textContent=answer<0?'Lejárt az idő. A terület szabad marad.':correct?'Helyes válasz! A terület a tiéd.':'Nem ez a helyes válasz — a terület szabad marad.';}
- const submit=$('submitAnswer');if(submit){submit.disabled=true;submit.textContent=answer<0?'Lejárt az idő…':'Válasz rögzítése…';}
+ if(answerBusy||!roomId||!pending?.id)return;answerBusy=true;clearQuestionTimer();
  try{
-   if(answer>=0)await new Promise(resolve=>setTimeout(resolve,450));
-   const snap=await get(ref(db,'rooms/'+roomId)),data=snap.val();
-   if(!data||data.turn!==uid||data.phase!=='playing'||data.pendingQuestion?.forUid!==uid)return;
-   const order=data.turnOrder||Object.keys(data.players),idx=order.indexOf(uid),next=order[(idx+1)%order.length],territories=data.territories||[];
-   if(correct&&territories[pending.territoryIndex])territories[pending.territoryIndex].owner=uid;
-   selectedTerritory=null;
-   const won=territories.filter(t=>t.owner===uid).length>=data.target;
-   const resultState={text:`${data.players[uid].name}: ${answer<0?'lejárt az idő.':correct?'helyes válasz, terület elfoglalva.':'hibás válasz.'}`,by:uid,correct,at:Date.now()};
-   await update(ref(db,'rooms/'+roomId),{territories,turn:next,round:(data.round||0)+1,questionIndex:((data.questionIndex||0)+1)%(data.questions||sample).length,pendingQuestion:null,lastResult:resultState,phase:won?'finished':'playing'});
-   selectedTerritory=null;
- }catch(e){console.error(e);const target=$('answerResult');if(target)target.textContent='Kapcsolódási hiba. Ellenőrizd a kapcsolatot, majd próbálj újra.';}
- finally{answerBusy=false;activePending=null;}
+   const result=await runTransaction(ref(db,'rooms/'+roomId),state=>{
+     if(!state||state.phase!=='playing'||!state.pendingQuestion||state.pendingQuestion.id!==pending.id)return;
+     const p=state.pendingQuestion,participants=p.mode==='battle'?[p.attackerUid,p.defenderUid]:[p.attackerUid];
+     if(!participants.includes(uid)||p.answers?.[uid]||p.reveal)return;
+     const q=p.questionsByUid?.[uid]||p.question;if(!q)return;
+     p.answers={...(p.answers||{}),[uid]:{answer,correct:answer===q.correct,answeredAt:Date.now()}};
+     if(participants.every(id=>id&&p.answers?.[id])){
+       const a=p.answers[p.attackerUid],d=p.mode==='battle'?p.answers[p.defenderUid]:null;
+       p.reveal={revealedAt:Date.now(),answers:p.answers,attackerWon:p.mode==='battle'&&!!a?.correct&&!d?.correct};
+     }
+     state.pendingQuestion=p;return state;
+   });
+   if(!result.committed){const r=$('questionArea');if(r)r.insertAdjacentHTML('beforeend','<p class="error">A válasz már rögzítve lett, vagy a kérdés lezárult.</p>');}
+ }catch(e){console.error(e);const target=$('questionArea');if(target)target.insertAdjacentHTML('beforeend',`<p class="error">Nem sikerült rögzíteni a választ: ${esc(e.message||'kapcsolódási hiba')}</p>`);}
+ finally{answerBusy=false;}
 }
-function renderFinished(){const order=roomData.turnOrder||Object.keys(roomData.players||{}),players=roomData.players||{};const counts=order.map(id=>({id,name:players[id]?.name||'Játékos',color:players[id]?.color||colors[0],n:(roomData.territories||[]).filter(t=>t.owner===id).length})).sort((a,b)=>b.n-a.n);$('winnerTitle').textContent=counts[0]?.name+' győzött!';$('finalScores').innerHTML=counts.map((p,i)=>`<div class="score-row"><span>${i===0?'🏆':i+1+'.'}</span><span class="score-dot" style="background:${esc(p.color)}"></span><span class="score-name">${esc(p.name)}</span><span class="score-points">${p.n} terület</span></div>`).join('');}
-async function leave(){if(unsubscribe){unsubscribe();unsubscribe=null;}roomId=null;roomData=null;selectedTerritory=null;show('home');}
+function scheduleFinalizePending(pending){
+ if(!pending?.reveal||!pending.id)return;if(finalizeTimerId===pending.id)return;clearFinalizeTimer();finalizeTimerId=pending.id;
+ const delay=Math.max(0,(Number(pending.reveal.revealedAt)||Date.now())+5000-Date.now());finalizeTimer=setTimeout(()=>finalizePending(pending.id),delay);
+}
+async function finalizePending(pendingId){
+ if(!roomId)return;clearFinalizeTimer();clearTimeoutMonitor();clearQuestionTimer();
+ try{
+   await runTransaction(ref(db,'rooms/'+roomId),state=>{
+     const p=state?.pendingQuestion;if(!state||state.phase!=='playing'||!p||p.id!==pendingId||!p.reveal)return;
+     const players=state.players||{},order=state.turnOrder||Object.keys(players),territories=state.territories||[],qs=state.questions||sample,mode=p.mode||'claim';
+     const attackerUid=p.attackerUid,defenderUid=p.defenderUid,attacker=players[attackerUid];let text='';
+     if(mode==='claim'){
+       const answer=p.reveal.answers?.[attackerUid];if(answer?.correct&&territories[p.territoryIndex])territories[p.territoryIndex].owner=attackerUid;
+       text=answer?.correct?`${attacker?.name||'A játékos'} elfoglalta ${territories[p.territoryIndex]?.name||'a vármegyét'}.`:`${attacker?.name||'A játékos'} nem tudta elfoglalni ${territories[p.territoryIndex]?.name||'a vármegyét'}.`;
+       state.questionIndex=((Number(state.questionIndex)||0)+1)%Math.max(1,qs.length);
+       const free=territories.some(t=>!t.owner);
+       if(!free){state.stage='battle';state.battleTurnCount=0;state.turn=nextPlayerWithLand(order,0,territories);text+=' Minden terület gazdára talált: kezdődik a csatafázis!';}
+       else{const idx=order.indexOf(attackerUid);const alreadyOwns=territories.some(t=>t.owner===attackerUid);state.turn=alreadyOwns?order[(idx+1+order.length)%order.length]:attackerUid;}
+     }else{
+       const won=!!p.reveal.attackerWon;if(won&&territories[p.territoryIndex])territories[p.territoryIndex].owner=attackerUid;
+       text=won?`${attacker?.name||'A támadó'} elfoglalta ${territories[p.territoryIndex]?.name||'a vármegyét'} ${players[defenderUid]?.name||'a védő'} játékostól.`:`${players[defenderUid]?.name||'A védő'} megvédte ${territories[p.territoryIndex]?.name||'a vármegyét'}.`;
+       state.battleTurnCount=(Number(state.battleTurnCount)||0)+1;state.questionIndex=((Number(state.questionIndex)||0)+1)%Math.max(1,qs.length);
+       const alive=[...new Set(territories.map(t=>t.owner).filter(Boolean))];
+       const idx=order.indexOf(attackerUid);state.turn=nextPlayerWithLand(order,(idx+1)%order.length,territories);
+       const maxTurns=(Number(state.battleRounds)||5)*order.length;
+       if(alive.length<=1||state.battleTurnCount>=maxTurns){state.phase='finished';text+=alive.length<=1?' A többi játékos területei elfogytak.':' Lezárult az összes csatakör.';}
+     }
+     state.territories=territories;state.round=(Number(state.round)||0)+1;state.lastResult={text,by:attackerUid,correct:!!p.reveal.answers?.[attackerUid]?.correct,at:Date.now()};state.pendingQuestion=null;
+     return state;
+   });
+   selectedTerritory=null;renderedPendingSignature='';
+ }catch(e){console.error('Kör lezárási hiba:',e);}
+}
+function renderFinished(){
+ const order=roomData.turnOrder||Object.keys(roomData.players||{}),players=roomData.players||{},territories=roomData.territories||[];
+ const counts=order.map(id=>({id,name:players[id]?.name||'Játékos',color:players[id]?.color||colors[0],n:territories.filter(t=>t.owner===id).length})).sort((a,b)=>b.n-a.n);
+ $('winnerTitle').textContent=(counts[0]?.name||'Nincs győztes')+' győzött!';
+ $('finishedSummary').textContent=`${Number(roomData.round)||0} kérdéses forduló · ${Number(roomData.battleTurnCount)||0} csata · ${Number(roomData.questions?.length)||0} kérdés a kérdésbankban`;
+ $('finalScores').innerHTML=counts.map((p,i)=>`<div class="score-row"><span>${i===0?'🏆':i+1+'.'}</span><span class="score-dot" style="background:${esc(p.color)}"></span><span class="score-name">${esc(p.name)}</span><span class="score-points">${p.n} terület</span></div>`).join('');
+}
+async function leave(){if(unsubscribe){unsubscribe();unsubscribe=null;}clearQuestionTimer();clearFinalizeTimer();clearTimeoutMonitor();roomId=null;roomData=null;selectedTerritory=null;show('home');}
 $('showCreate').onclick=()=>show('create');$('showJoin').onclick=()=>show('join');document.querySelectorAll('[data-home]').forEach(b=>b.onclick=()=>show('home'));$('createRoom').onclick=createRoom;$('joinRoom').onclick=joinRoom;$('startGame').onclick=startGame;$('leaveRoom').onclick=leave;$('gameLeave').onclick=leave;
-$('backToLobby').onclick=async()=>{if(uid===hostUid&&roomId)await update(ref(db,'rooms/'+roomId),{phase:'lobby',pendingQuestion:null,lastResult:null,territories:(roomData.territories||[]).map(t=>({...t,owner:null})),turn:hostUid,round:0,questionIndex:0});};
+$('backToLobby').onclick=async()=>{if(uid===hostUid&&roomId)await update(ref(db,'rooms/'+roomId),{phase:'lobby',stage:'claim',pendingQuestion:null,lastResult:null,territories:(roomData.territories||[]).map(t=>({...t,owner:null})),turn:hostUid,round:0,questionIndex:0,battleTurnCount:0});};
 async function copyRoomCode(targetId){if(!roomId)return;try{await navigator.clipboard.writeText(roomId);$(targetId).textContent='Másolva ✓';setTimeout(()=>$(targetId).textContent=roomId+' ⧉',1400);}catch{$(targetId).textContent=roomId;}}
 $('copyCode').onclick=()=>copyRoomCode('copyCode');$('copyHeaderCode').onclick=()=>copyRoomCode('copyHeaderCode');
 $('roomCode').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''));
 $('csvFile').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;try{const txt=await f.text();const qs=parseCSV(txt);if(!qs.length){$('fileInfo').textContent='Nem sikerült kérdéseket felismerni. Ellenőrizd a CSV oszlopait.';localQuestions=sample;}else{localQuestions=qs;$('fileInfo').textContent=`${f.name}: ${qs.length} kérdés betöltve.`;}}catch{$('fileInfo').textContent='Nem sikerült beolvasni a fájlt.';}});
-$('gameSettings').onclick=()=>{if(!roomData)return;$('settingsTarget').value=String(roomData.target||7);$('settingsPermission').textContent=uid===hostUid?'A győzelmi cél mentése az egész szobára érvényes.':'Csak a szoba létrehozója módosíthatja a győzelmi célt.';$('saveSettings').classList.toggle('hidden',uid!==hostUid);$('settingsTarget').disabled=uid!==hostUid;$('gameSettingsModal').classList.remove('hidden');};
-$('saveSettings').onclick=async()=>{if(uid!==hostUid||!roomId)return;try{await update(ref(db,'rooms/'+roomId),{target:Number($('settingsTarget').value)});$('gameSettingsModal').classList.add('hidden');}catch(e){$('settingsPermission').textContent='Nem sikerült menteni: '+(e.message||'Firebase-hiba');}};
-$('gameQuestions').onclick=()=>{const questions=roomData?.questions||localQuestions;$('questionsModalTitle').textContent=`Kérdésbank · ${questions.length} kérdés`;$('questionBankList').innerHTML=questions.slice(0,150).map((q,i)=>`<li><span>${i+1}</span><p>${esc(q.question)}</p></li>`).join('');$('gameQuestionsModal').classList.remove('hidden');};
+$('gameSettings').onclick=()=>{if(!roomData)return;$('settingsSummary').innerHTML=`<div><b>Válaszidő</b><span>${Number(roomData.questionTime)||20} másodperc / kérdés</span></div><div><b>Csatakörök</b><span>${Number(roomData.battleRounds)||5} kör játékosonként</span></div><div><b>Kérdések</b><span>${(roomData.questions||sample).length}, véletlenszerű sorrendben</span></div><div><b>Játékmenet</b><span>Területfoglalás, majd támadás-védekezés</span></div>`;$('settingsPermission').textContent='Ezek a beállítások a szoba létrehozásakor rögzültek.';$('saveSettings').textContent='Bezárás';$('saveSettings').onclick=()=>$('gameSettingsModal').classList.add('hidden');$('gameSettingsModal').classList.remove('hidden');};
+function openQuestionsReview(showCorrect){const questions=roomData?.questions||localQuestions;$('questionsModalTitle').textContent=showCorrect?'Kérdések és helyes válaszok':`Kérdésbank · ${questions.length} kérdés`;$('questionsModalDescription').textContent=showCorrect?'A kérdések véletlenszerű sorrendben, a helyes válasz zölddel jelölve.':'A szobába importált kérdések.';$('questionBankList').innerHTML=questions.map((q,i)=>`<li class="review-question"><span>${i+1}</span><div class="review-question-body"><p>${esc(q.question)}</p>${showCorrect?`<div class="review-options">${(q.options||[]).map((o,j)=>`<div class="review-option ${j===q.correct?'review-correct':''}"><b>${'ABCD'[j]}</b><span>${esc(o)}</span>${j===q.correct?'<strong>✓ Helyes válasz</strong>':''}</div>`).join('')}</div>`:''}</div></li>`).join('');$('gameQuestionsModal').classList.remove('hidden');}
+$('gameQuestions').onclick=()=>openQuestionsReview(false);$('showFinishedQuestions').onclick=()=>openQuestionsReview(true);
 document.querySelectorAll('[data-close-modal]').forEach(b=>b.addEventListener('click',()=>b.closest('.modal').classList.add('hidden')));
 $('roomCode').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''));
 let mapZoom=1;
