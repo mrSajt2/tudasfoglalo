@@ -4,10 +4,24 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14213d"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Tudásfoglaló"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon.svg"><link rel="stylesheet" href="style.css"><title>Tudásfoglaló</title>
 </head>
 <body>
-<header><div class="brand"><div class="brand-icon">⚑</div><div><h1>Tudásfoglaló</h1><p>Tanulj. Foglalj. Győzz.</p></div></div><span id="connection" class="pill">Kapcsolódás…</span></header>
+<header class="app-header">
+  <div class="brand"><div class="brand-icon">⚑</div><div><h1>Tudásfoglaló</h1><p>Tanulj. Foglalj. Győzz.</p></div></div>
+  <div id="headerRoomBox" class="room-summary hidden">
+    <div class="room-summary-main">Szoba: <strong id="headerRoomCode">—</strong><button id="copyHeaderCode" class="copy-mini" aria-label="Szobakód másolása">⧉</button></div>
+    <div class="room-summary-meta" id="headerRoomMeta">Játékosok: 0/6 · Kérdések: 0</div>
+  </div>
+  <div class="header-right">
+    <div id="gameActions" class="header-actions hidden">
+      <button id="gameSettings" class="header-action" type="button"><span>⚙</span> Beállítások</button>
+      <button id="gameQuestions" class="header-action" type="button"><span>▤</span> Kérdések</button>
+      <button id="gameLeave" class="header-action header-danger" type="button"><span>⇥</span> Kilépés</button>
+    </div>
+    <span id="connection" class="pill">Kapcsolódás…</span>
+  </div>
+</header>
 <main>
 <section id="home" class="panel">
-  <div class="hero"><div class="eyebrow">A SAJÁT VIZSGAKÉRDÉSEIDDEL</div><h2>Hódítsd meg a térképet<br>tudással!</h2><p>Hozzatok létre online szobát, és versenyezzetek külön iPhone-okról.</p></div>
+  <div class="hero"><div class="eyebrow">A SAJÁT VIZSGAKÉRDÉSEIDDEL</div><h2>Hódítsd meg Magyarországot<br>tudással!</h2><p>Hozzatok létre online szobát, és versenyezzetek külön iPhone-okról.</p></div>
   <div class="home-actions"><button id="showCreate" class="primary">＋ Új játék létrehozása</button><button id="showJoin" class="secondary">Szobához csatlakozás</button></div>
   <div class="note"><b>iPhone-tipp:</b> Safariban nyisd meg, majd Megosztás → <em>Főképernyőhöz adás</em>. Így alkalmazásként indítható.</div>
   <p class="small muted">Az online játékhoz a Firebase-konfigurációt egyszer be kell állítani (útmutató a ZIP-ben).</p>
@@ -28,11 +42,29 @@
   <button id="leaveRoom" class="back">← Kilépés</button><div class="lobby-heading"><div><div class="eyebrow">CSAK A MEGHÍVOTTAKNAK</div><h2 id="lobbyTitle">Játékszoba</h2></div><div class="room-code-wrap"><span>Szobakód</span><button id="copyCode" class="room-code">------ ⧉</button></div></div>
   <p class="muted small">Küldd el a kódot a szaktársaidnak!</p><h3>Játékosok <span id="playerCount"></span></h3><div id="players" class="players"></div><div id="hostControls"><label for="winTarget">Győzelemhez szükséges területek</label><select id="winTarget"><option value="4">4 terület – gyors</option><option value="7" selected>7 terület – normál</option><option value="10">10 terület – hosszú</option></select><button id="startGame" class="primary full">Játék indítása</button></div><p id="lobbyWait" class="muted small"></p><p id="lobbyError" class="error"></p>
 </section>
-<section id="game" class="panel hidden">
-  <div class="game-top"><div><div class="eyebrow" id="gameSubject">TANTÁRGY</div><h2>Hódítótérkép</h2></div><button id="gameLeave" class="text-button">Kilépés</button></div>
-  <div id="turnBanner" class="turn-banner">Kör betöltése…</div><div id="scoreboard" class="scoreboard"></div><div id="map" class="map"></div><div id="questionArea" class="question-area"><p class="muted">Várakozás a következő körre…</p></div><div id="gameStatus" class="small muted"></div>
+<section id="game" class="panel game-screen hidden">
+  <div class="game-board">
+    <aside class="players-rail">
+      <div class="rail-heading"><div><strong>Játékosok</strong><span id="gamePlayerCount">0 játékos</span></div><span class="rail-crown">♛</span></div>
+      <div id="scoreboard" class="scoreboard"></div>
+      <div class="conquest-tip"><div class="tip-icon">⚑</div><strong>Hódíts tudással!</strong><p>Válassz egy szabad vármegyét, válaszolj helyesen, és szerezd meg a területet.</p></div>
+      <div class="map-key"><span><i class="key-dot free-dot"></i>Szabad terület</span><span><i class="key-dot owned-dot"></i>Elfoglalt terület</span></div>
+    </aside>
+    <section class="map-area">
+      <div class="map-toolbar"><div><div class="eyebrow" id="gameSubject">TANULÓS JÁTÉK</div><h2>Magyarország vármegyéi</h2><p>Az ország a tiéd lehet — egy jó válasszal kezdődik.</p></div><div id="turnBanner" class="turn-banner">A kör betöltése…</div></div>
+      <div id="map" class="map map-hungary"></div><div class="zoom-controls" aria-label="Térkép nagyítása"><button id="mapZoomIn" type="button" aria-label="Nagyítás">+</button><button id="mapZoomOut" type="button" aria-label="Kicsinyítés">−</button></div>
+    </section>
+    <section class="question-dock"><div id="questionArea" class="question-area"><div class="question-empty"><div class="empty-icon">⌖</div><div><strong>Válassz egy vármegyét!</strong><p>Koppints egy szabad területre a térképen, majd válaszolj a kérdésre.</p></div></div></div></section>
+  </div>
+  <div id="gameStatus" class="game-status small muted"></div>
 </section>
 <section id="finished" class="panel hidden"><div class="winner-icon">🏆</div><div class="eyebrow">A JÁTÉK VÉGET ÉRT</div><h2 id="winnerTitle">Győztes!</h2><div id="finalScores" class="scoreboard"></div><button id="backToLobby" class="primary full">Vissza a szobába</button></section>
-</main><footer>Tanulásból terület. Területből győzelem.</footer>
-<script type="module" src="app.js?v=2"></script>
+</main><div id="gameSettingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="modal-backdrop" data-close-modal></div><div class="modal-card"><button class="modal-close" data-close-modal aria-label="Bezárás">×</button><div class="eyebrow">JÁTÉKBEÁLLÍTÁSOK</div><h2 id="settingsTitle">Szobabeállítások</h2><label for="settingsTarget">Győzelemhez szükséges területek</label><select id="settingsTarget"><option value="4">4 terület – gyors</option><option value="7">7 terület – normál</option><option value="10">10 terület – hosszú</option><option value="12">12 terület – stratégiai</option></select><p id="settingsPermission" class="muted small"></p><button id="saveSettings" class="primary full" type="button">Beállítások mentése</button></div>
+</div>
+<div id="gameQuestionsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="questionsModalTitle">
+  <div class="modal-backdrop" data-close-modal></div><div class="modal-card modal-card-wide"><button class="modal-close" data-close-modal aria-label="Bezárás">×</button><div class="eyebrow">KÉRDÉSBANK</div><h2 id="questionsModalTitle">Kérdések</h2><p class="muted small">A szobába importált kérdések. A helyes válaszokat itt nem jelenítjük meg.</p><ol id="questionBankList" class="question-bank-list"></ol><button class="secondary full" type="button" data-close-modal>Bezárás</button></div>
+</div>
+<footer>Tanulásból terület. Területből győzelem.</footer>
+<script type="module" src="app.js?v=5"></script>
 </body></html>
