@@ -1,0 +1,97 @@
+name: Tudásfoglaló iOS cloud build
+
+on:
+  workflow_dispatch:
+    inputs:
+      web_app_url:
+        description: "A közzétett GitHub Pages játék teljes HTTPS-címe"
+        required: false
+        type: string
+        default: ""
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    name: Build iOS app (unsigned IPA)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve game URL
+        shell: bash
+        env:
+          INPUT_WEB_APP_URL: ${{ inputs.web_app_url }}
+          REPO_WEB_APP_URL: ${{ vars.APP_WEB_URL }}
+        run: |
+          WEB_URL="${INPUT_WEB_APP_URL:-$REPO_WEB_APP_URL}"
+          if [[ -z "$WEB_URL" ]]; then
+            echo "Missing APP_WEB_URL. Run Actions > Tudásfoglaló iOS cloud build > Run workflow and enter your GitHub Pages HTTPS URL, or set repository variable APP_WEB_URL under Settings > Secrets and variables > Actions > Variables."
+            exit 1
+          fi
+          if [[ "$WEB_URL" != https://* ]]; then
+            echo "APP_WEB_URL must start with https://"
+            exit 1
+          fi
+          echo "Building the app to load: $WEB_URL"
+          echo "WEB_APP_URL=$WEB_URL" >> "$GITHUB_ENV"
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build for physical iOS devices
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ios/Tudasfoglalo.xcodeproj \
+            -scheme Tudasfoglalo \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/TudasfoglaloDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            "APP_WEB_URL=$WEB_APP_URL" \
+            build | tee "$RUNNER_TEMP/tudasfoglalo-xcodebuild.log"
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/TudasfoglaloDerivedData/Build/Products/Release-iphoneos/Tudasfoglalo.app"
+          if [[ ! -d "$APP_PATH" ]]; then
+            echo "Build finished without the expected .app bundle."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/tudasfoglalo-package/Payload"
+          ditto "$APP_PATH" "$RUNNER_TEMP/tudasfoglalo-package/Payload/Tudasfoglalo.app"
+          cd "$RUNNER_TEMP/tudasfoglalo-package"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/Tudasfoglalo-unsigned.ipa" Payload
+          cd "$RUNNER_TEMP"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/Tudasfoglalo-app-bundle.zip" TudasfoglaloDerivedData/Build/Products/Release-iphoneos/Tudasfoglalo.app
+          cat > "$GITHUB_WORKSPACE/BUILD-NOTES.txt" <<NOTES
+          Tudásfoglaló iOS build
+          App URL: $WEB_APP_URL
+          Signing: unsigned (CODE_SIGNING_ALLOWED=NO)
+
+          The IPA is a build artifact, not directly installable as-is. For use with a free Apple account, import it into a compatible sideloading/signing workflow such as AltStore Classic and sign it with your own Apple Account. Free-account signatures expire periodically (typically after 7 days). For TestFlight/App Store distribution, an Apple Developer Program membership is required.
+          NOTES
+
+      - name: Upload iOS build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tudasfoglalo-ios-unsigned-build
+          path: |
+            Tudasfoglalo-unsigned.ipa
+            Tudasfoglalo-app-bundle.zip
+            BUILD-NOTES.txt
+          if-no-files-found: error
+          retention-days: 14
