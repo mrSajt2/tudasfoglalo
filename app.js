@@ -125,16 +125,32 @@ function renderGame(){
  const players=roomData.players||{},order=roomData.turnOrder||Object.keys(players),turn=roomData.turn,active=players[turn];
  const territories=roomData.territories||[],isCurrent=turn===uid&&roomData.phase==='playing',questions=roomData.questions||sample;
  const stage=roomData.stage||'claim';
+ const pending=roomData.pendingQuestion||null;
+ $('mapArea')?.classList.toggle('question-active',Boolean(pending));
+ $('questionDock')?.setAttribute('aria-hidden',String(!pending));
  $('gameSubject').textContent=roomData.title||'TANULÓS JÁTÉK';$('headerRoomCode').textContent=roomId||'—';
  $('headerRoomMeta').textContent=`Játékosok: ${Object.keys(players).length}/6 · Kérdések: ${questions.length}`;
  const freeCount=territories.filter(t=>!t.owner).length;
- if(stage==='claimQuiz')$('turnBanner').textContent=`Közös kérdés · mindenki válaszol`;
- else if(stage==='claimPick')$('turnBanner').textContent=turn===uid?'Te következel · válassz szabad vármegyét':`${active?.name||'Egy játékos'} területet választ`;
- else if(stage==='battle')$('turnBanner').textContent=turn===uid?'A te köröd · Válassz ellenfél-vármegyét':`${active?.name||'Egy játékos'} támad`;
- else $('turnBanner').textContent=turn===uid?'A te köröd · Válassz egy szabad vármegyét':`${active?.name||'Egy játékos'} foglal területet`;
+ const banner=$('turnBanner');
+ const activeColor=active?.color||colors[0];
+ banner.style.setProperty('--turn-color',activeColor);
+ if(stage==='claimQuiz'){
+  banner.className='turn-banner turn-shared';
+  banner.innerHTML='<span class="turn-dot"></span><strong>KÖZÖS KÉRDÉS</strong><small>Mindenki válaszol</small>';
+ }else if(pending?.mode==='battle'){
+  const attacker=players[pending.attackerUid]||{},defender=players[pending.defenderUid]||{};
+  banner.className='turn-banner turn-duel';
+  banner.innerHTML=`<div class="turn-duel-players"><span class="turn-player-chip" style="--player-color:${esc(attacker.color||colors[0])}">${esc(attacker.name||'Támadó')}</span><b>VS</b><span class="turn-player-chip" style="--player-color:${esc(defender.color||colors[1])}">${esc(defender.name||'Védő')}</span></div><small>Mindketten ugyanarra a kérdésre válaszoltok</small>`;
+ }else{
+  const ownTurn=turn===uid;
+  const action=stage==='claimPick'?'vármegyét választ':stage==='battle'?'támadási célpontot választ':'szabad vármegyét foglal';
+  banner.className=`turn-banner ${ownTurn?'turn-yours':'turn-other'}`;
+  banner.innerHTML=`<span class="turn-dot"></span><strong>${ownTurn?'TE JÖSSZ':esc(active?.name||'A játékos')+' köre'}</strong><small>${ownTurn?'Válassz '+(stage==='battle'?'ellenfél-vármegyét':'szabad vármegyét'):esc(active?.name||'A játékos')+' '+action}</small>`;
+ }
  $('gamePlayerCount').textContent=`${Object.keys(players).length} játékos`;
+ const answeringIds=pending?(pending.mode==='claimQuiz'?participantsForQuestion(pending,order):pending.mode==='battle'?[pending.attackerUid,pending.defenderUid]:[pending.attackerUid]):[];
  const ranked=order.map(id=>{const pl=players[id]||{};return {id,p:pl,n:territories.filter(t=>t.owner===id).length};}).sort((a,b)=>b.n-a.n);
- $('scoreboard').innerHTML=ranked.map(({id,p,n},i)=>`<div class="rank-card ${stage!=='claimQuiz'&&id===turn?'active':''}" style="--player-color:${esc(p.color||colors[0])}"><div class="rank-number">${i+1}</div><div class="rank-info"><strong>${esc(p.name||'Játékos')}</strong><span>${n} ${n===1?'terület':'terület'}</span></div>${i===0?'<span class="leader-crown" aria-label="Élen áll">♛</span>':''}</div>`).join('');
+ $('scoreboard').innerHTML=ranked.map(({id,p,n},i)=>{const activeTurn=stage!=='claimQuiz'&&id===turn;const answering=answeringIds.includes(id);return `<div class="rank-card ${activeTurn?'active':''} ${answering?'responding':''}" style="--player-color:${esc(p.color||colors[0])}"><div class="rank-number">${i+1}</div><div class="rank-info"><strong>${esc(p.name||'Játékos')}</strong><span>${n} ${n===1?'terület':'terület'}${activeTurn?' · SORON':answering?' · VÁLASZOL':''}</span></div>${i===0?'<span class="leader-crown" aria-label="Élen áll">♛</span>':''}</div>`;}).join('');
  const tracker=$('roundTracker');
  if(tracker){
   if(stage==='battle'){
@@ -147,7 +163,7 @@ function renderGame(){
    tracker.innerHTML=`<span class="round-tracker-label">TERÜLETFOGLALÁS</span><strong>${Number(roomData.claimRound)||1}. közös kérdés</strong><small>1. hely: 2 terület · 2. hely: 1 terület</small>`;
   }
  }
- const pending=roomData.pendingQuestion;const selectedIndex=selectedTerritory??pending?.territoryIndex;
+ const selectedIndex=selectedTerritory??pending?.territoryIndex;
  const areas=countyDefs.map((county,i)=>{
    const t=territories[i]; if(!t)return '';
    const owner=t.owner?players[t.owner]:null;

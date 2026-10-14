@@ -56,11 +56,11 @@
       <div class="conquest-tip"><div class="tip-icon">⚑</div><strong>Hódíts tudással!</strong><p>Válassz egy szabad vármegyét, válaszolj helyesen, és szerezd meg a területet.</p></div>
       <div class="map-key"><span><i class="key-dot free-dot"></i>Szabad terület</span><span><i class="key-dot owned-dot"></i>Elfoglalt terület</span></div>
     </aside>
-    <section class="map-area">
+    <section class="map-area" id="mapArea">
       <div class="map-toolbar"><div><div class="eyebrow" id="gameSubject">TANULÓS JÁTÉK</div><h2>Magyarország vármegyéi</h2><p>Az ország a tiéd lehet — egy jó válasszal kezdődik.</p></div><div id="turnBanner" class="turn-banner">A kör betöltése…</div></div>
-      <div id="map" class="map map-hungary"></div><div class="zoom-controls" aria-label="Térkép nagyítása"><button id="mapZoomIn" type="button" aria-label="Nagyítás">+</button><button id="mapZoomOut" type="button" aria-label="Kicsinyítés">−</button></div>
+<div id="map" class="map map-hungary"></div><div class="zoom-controls" aria-label="Térkép nagyítása"><button id="mapZoomIn" type="button" aria-label="Nagyítás">+</button><button id="mapZoomOut" type="button" aria-label="Kicsinyítés">−</button></div>
+      <section id="questionDock" class="question-dock" aria-live="polite" aria-hidden="true"><div id="questionArea" class="question-area"><div class="question-empty"><div class="empty-icon">⌖</div><div><strong>Válassz egy vármegyét!</strong><p>Először foglaljátok el a szabad vármegyéket, utána kezdődnek a csaták.</p></div></div></div></section>
     </section>
-    <section class="question-dock"><div id="questionArea" class="question-area"><div class="question-empty"><div class="empty-icon">⌖</div><div><strong>Válassz egy vármegyét!</strong><p>Először foglaljátok el a szabad vármegyéket, utána kezdődnek a csaták.</p></div></div></div></section>
   </div>
   <div id="gameStatus" class="game-status small muted"></div>
 </section>
@@ -72,5 +72,5 @@
   <div class="modal-backdrop" data-close-modal></div><div class="modal-card modal-card-wide"><button class="modal-close" data-close-modal aria-label="Bezárás">×</button><div class="eyebrow">KÉRDÉSBANK</div><h2 id="questionsModalTitle">Kérdések</h2><p id="questionsModalDescription" class="muted small">A szobába importált kérdések.</p><ol id="questionBankList" class="question-bank-list"></ol><button class="secondary full" type="button" data-close-modal>Bezárás</button></div>
 </div>
 <footer>Tanulásból terület. Területből győzelem.</footer>
-<script type="module" src="app.js?v=8"></script>
+<script type="module" src="app.js?v=9"></script>
 </body></html>

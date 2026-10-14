@@ -513,3 +513,97 @@ body.screen-game .turn-banner{padding:8px 10px;min-width:0;font-size:11px;max-wi
  body.screen-game .battle-winner-banner strong{font-size:clamp(10px,2.7vw,13px);line-height:1.05;letter-spacing:0}
 }
 @media(max-width:390px){body.screen-game .game-board{grid-template-rows:minmax(55px,auto) minmax(132px,26dvh) minmax(0,1fr)}body.screen-game .players-rail{grid-template-rows:36px 18px}body.screen-game .scoreboard{height:36px}}
+
+/* v9 responsive map-first play: questions float over the map only while active. */
+body.screen-game .game-screen{display:flex;flex-direction:column;min-height:0;height:100%;overflow:hidden}
+body.screen-game .game-board{flex:1 1 auto;min-height:0;height:auto;grid-template-rows:minmax(0,1fr);overflow:hidden}
+body.screen-game .map-area{position:relative;isolation:isolate;min-height:0;overflow:hidden}
+body.screen-game .map-area::after{content:"";position:absolute;z-index:3;left:0;right:0;top:36px;bottom:0;background:rgba(3,9,22,.38);backdrop-filter:blur(1px);opacity:0;pointer-events:none;transition:opacity .18s ease}
+body.screen-game .map-area.question-active::after{opacity:1}
+body.screen-game .question-dock{display:none;position:absolute;z-index:8;left:3%;right:3%;top:clamp(52px,9%,78px);bottom:10px;height:auto;min-height:0;overflow:hidden;grid-column:auto;margin:0}
+body.screen-game .map-area.question-active .question-dock{display:block}
+body.screen-game .question-area{height:100%;min-height:0;max-height:100%;padding:clamp(10px,1.3vw,18px);overflow-y:auto;overscroll-behavior:contain;border-radius:20px;background:linear-gradient(145deg,rgba(12,27,52,.97),rgba(6,16,34,.97));border-color:#47669b;box-shadow:0 20px 65px rgba(0,0,0,.55),0 0 0 1px rgba(127,162,235,.1);backdrop-filter:blur(14px)}
+body.screen-game .question-panel-heading{margin-bottom:8px}
+body.screen-game .quiz-grid{min-height:0;grid-template-columns:minmax(0,1fr) 130px;gap:10px;align-items:stretch}
+body.screen-game .quiz-main h3{font-size:clamp(16px,1.55vw,22px);line-height:1.22;margin-bottom:9px;overflow-wrap:anywhere}
+body.screen-game .options{gap:7px}
+body.screen-game .option{min-height:44px;touch-action:manipulation}
+body.screen-game .quiz-side{padding-left:10px}
+body.screen-game .turn-banner{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;max-width:42%;padding:8px 11px;border-radius:13px;border-color:color-mix(in srgb,var(--turn-color,#3688ff),white 14%);border-left:4px solid var(--turn-color,#3688ff);background:linear-gradient(145deg,color-mix(in srgb,var(--turn-color,#3688ff),#0a1730 72%),#0a1730);font-size:11px;line-height:1.2;white-space:normal}
+body.screen-game .turn-banner strong{font-weight:900;letter-spacing:.2px}
+body.screen-game .turn-banner small{font-size:9px;font-weight:650;color:#b8c8e8;line-height:1.2}
+body.screen-game .turn-dot{display:inline-block;width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--turn-color,#3688ff);box-shadow:0 0 10px var(--turn-color,#3688ff)}
+body.screen-game .turn-yours{box-shadow:0 0 0 1px color-mix(in srgb,var(--turn-color,#3688ff),transparent 35%),0 0 20px color-mix(in srgb,var(--turn-color,#3688ff),transparent 78%)}
+body.screen-game .turn-shared{border-left-color:#9ba7ff;background:linear-gradient(145deg,#29235f,#101d3a)}
+body.screen-game .turn-duel{max-width:min(48%,430px);gap:5px}
+body.screen-game .turn-duel-players{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap}
+body.screen-game .turn-player-chip{display:inline-block;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 7px;border-radius:7px;border:1px solid var(--player-color);background:color-mix(in srgb,var(--player-color),#081328 78%);color:#f4f7ff;font-size:10px;font-weight:850}
+body.screen-game .turn-duel-players>b{font-size:9px;color:#9eafd1}
+body.screen-game .rank-card.active{border-color:var(--player-color,#3688ff);box-shadow:0 0 0 1px var(--player-color,#3688ff),0 0 18px color-mix(in srgb,var(--player-color,#3688ff),transparent 76%)}
+body.screen-game .rank-card.responding:not(.active){border-color:color-mix(in srgb,var(--player-color,#3688ff),white 8%);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--player-color,#3688ff),transparent 15%)}
+body.screen-game .rank-card.active .rank-info span{color:var(--player-color,#80b5ff);font-weight:850}
+body.screen-game .zoom-controls{z-index:4}
+body.screen-game .map-area.question-active .zoom-controls{opacity:.2;pointer-events:none}
+@media(max-width:760px){
+ body.screen-game .game-board{grid-template-columns:minmax(0,1fr);grid-template-rows:55px minmax(0,1fr);gap:3px;overflow:hidden}
+ body.screen-game .players-rail{grid-row:1;grid-template-columns:minmax(0,1fr);grid-template-rows:35px 18px;gap:1px;min-height:0}
+ body.screen-game .scoreboard{height:35px;overflow:hidden;gap:5px;padding:1px 1px 2px}
+ body.screen-game .rank-card{min-width:0;flex:1 1 0;padding:3px 4px;gap:4px;border-radius:8px}
+ body.screen-game .rank-number{width:23px;height:23px;flex:0 0 23px;font-size:11px}
+ body.screen-game .rank-info{gap:1px}
+ body.screen-game .rank-info strong{font-size:clamp(9px,2.7vw,11px)}
+ body.screen-game .rank-info span{font-size:8px;letter-spacing:-.1px}
+ body.screen-game .map-area{grid-row:2;display:flex;flex-direction:column;min-height:0;padding:0;overflow:hidden}
+ body.screen-game .map-toolbar{flex:0 0 auto;min-height:33px;padding:0 2px 3px;align-items:center;gap:5px}
+ body.screen-game .map-toolbar h2{font-size:13px}
+ body.screen-game .turn-banner{max-width:53%;padding:4px 6px;font-size:9px;border-radius:9px;gap:2px}
+ body.screen-game .turn-banner small{font-size:8px}
+ body.screen-game .turn-duel{max-width:58%}
+ body.screen-game .turn-player-chip{font-size:8px;padding:3px 5px;max-width:43%}
+ body.screen-game .map{flex:1 1 auto;min-height:0;height:0;width:100%;overflow:hidden;margin:0}
+ body.screen-game .map-scroll{width:100%;height:100%;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:center}
+ body.screen-game .hungary-map{width:100%;height:100%;min-width:0;max-height:100%;filter:drop-shadow(0 5px 8px #0004)}
+ body.screen-game .question-dock{left:3px;right:3px;top:36px;bottom:4px}
+ body.screen-game .question-area{padding:9px;border-radius:14px;overflow-y:auto;scrollbar-width:thin}
+ body.screen-game .question-panel-heading{margin-bottom:6px;gap:5px}
+ body.screen-game .subject-chip{font-size:9px;padding:3px 6px;gap:4px;max-width:78%}
+ body.screen-game .subject-icon{width:18px;height:18px;font-size:10px}
+ body.screen-game .question-progress{font-size:9px}
+ body.screen-game .quiz-grid{grid-template-columns:minmax(0,1fr) 62px;gap:7px}
+ body.screen-game .quiz-main{justify-content:flex-start;gap:0}
+ body.screen-game .quiz-main .eyebrow{font-size:8px;letter-spacing:.5px;line-height:1.1;margin-bottom:5px}
+ body.screen-game .quiz-main h3{font-size:clamp(13px,3.7vw,16px);line-height:1.2;margin:0 0 7px}
+ body.screen-game .options{grid-template-columns:minmax(0,1fr);gap:5px}
+ body.screen-game .option{min-height:43px;padding:6px 8px;border-radius:9px;gap:7px;font-size:11px;line-height:1.2}
+ body.screen-game .option-letter{width:24px;height:24px;flex:0 0 24px;font-size:11px}
+ body.screen-game .quiz-side{padding:2px 0 2px 6px;justify-content:center;align-items:stretch}
+ body.screen-game .timer-ring{width:48px;height:48px;margin:0 auto 4px}
+ body.screen-game .timer-ring::before{inset:4px}
+ body.screen-game .timer-ring span{font-size:17px}
+ body.screen-game .timer-caption{font-size:8px;margin:0 0 5px;line-height:1.1}
+ body.screen-game .submit-answer{padding:8px 4px;border-radius:8px;font-size:10px;line-height:1.1;overflow-wrap:anywhere}
+ body.screen-game .result{margin-top:5px;font-size:10px;line-height:1.2}
+ body.screen-game .question-empty{gap:7px;padding:2px 0;min-height:0;flex:1}
+ body.screen-game .empty-icon{height:30px;width:30px;border-radius:9px;font-size:16px;flex:0 0 30px}
+ body.screen-game .question-empty strong{font-size:11px}
+ body.screen-game .question-empty p{font-size:9px;line-height:1.2;margin-top:3px}
+ body.screen-game .answered-wait{gap:7px;padding:3px 0}
+ body.screen-game .answered-check{width:29px;height:29px;font-size:17px}
+ body.screen-game .answered-wait h3{font-size:12px;margin-bottom:3px}
+ body.screen-game .answered-wait p{font-size:9px;line-height:1.2}
+ body.screen-game .game-status{max-height:13px;font-size:8px;padding-top:1px}
+}
+@media(max-width:390px){
+ body.screen-game .game-board{grid-template-rows:52px minmax(0,1fr)}
+ body.screen-game .players-rail{grid-template-rows:33px 17px}
+ body.screen-game .scoreboard{height:33px;gap:3px}
+ body.screen-game .rank-card{padding:2px 3px;gap:3px}
+ body.screen-game .rank-number{width:20px;height:20px;flex-basis:20px;font-size:10px}
+ body.screen-game .rank-info strong{font-size:9px}
+ body.screen-game .rank-info span{font-size:7px}
+ body.screen-game .question-dock{top:34px}
+ body.screen-game .question-area{padding:7px}
+ body.screen-game .quiz-grid{grid-template-columns:minmax(0,1fr) 55px;gap:4px}
+ body.screen-game .timer-ring{width:43px;height:43px}
+ body.screen-game .option{min-height:41px;font-size:10px;padding:5px 6px}
+}
